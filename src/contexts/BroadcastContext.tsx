@@ -1,0 +1,198 @@
+/**
+ * BroadcastContext
+ *
+ * Global application state powered by React Context + useReducer.
+ * Wraps the ConnectionManager to bridge the service layer into React.
+ */
+
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useReducer,
+} from 'react';
+import { getConnectionManager, resetConnectionManager } from '../services/ConnectionManager';
+import type { AppMode, AppState, OverlayConfig, SessionMeta } from '../types/broadcast';
+
+// ── State & Actions ───────────────────────────────────────────
+
+interface BroadcastState {
+  mode: AppMode | null;
+  connectionState: AppState;
+  selectedCameraId: string | null;
+  selectedMicId: string | null;
+  sessionMeta: SessionMeta;
+  overlayConfig: OverlayConfig;
+  errorMessage: string | null;
+}
+
+type BroadcastAction =
+  | { type: 'SET_MODE'; mode: AppMode }
+  | { type: 'SET_CONNECTION_STATE'; state: AppState }
+  | { type: 'SET_CAMERA'; deviceId: string | null }
+  | { type: 'SET_MIC'; deviceId: string | null }
+  | { type: 'SET_SESSION_META'; meta: Partial<SessionMeta> }
+  | { type: 'SET_OVERLAY_CONFIG'; config: Partial<OverlayConfig> }
+  | { type: 'SET_ERROR'; message: string | null }
+  | { type: 'RESET' };
+
+const DEFAULT_SESSION_META: SessionMeta = {
+  skierName: '',
+  clubName: '',
+  className: '',
+  eventName: '',
+};
+
+const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
+  showSkierName: false,
+  showClubInfo: false,
+  showPauseScreen: false,
+  pauseMessage: 'Stand By',
+  customText: '',
+};
+
+const INITIAL_STATE: BroadcastState = {
+  mode: null,
+  connectionState: 'Disconnected',
+  selectedCameraId: null,
+  selectedMicId: null,
+  sessionMeta: DEFAULT_SESSION_META,
+  overlayConfig: DEFAULT_OVERLAY_CONFIG,
+  errorMessage: null,
+};
+
+function broadcastReducer(state: BroadcastState, action: BroadcastAction): BroadcastState {
+  switch (action.type) {
+    case 'SET_MODE':
+      return { ...state, mode: action.mode };
+    case 'SET_CONNECTION_STATE':
+      return { ...state, connectionState: action.state, errorMessage: null };
+    case 'SET_CAMERA':
+      return { ...state, selectedCameraId: action.deviceId };
+    case 'SET_MIC':
+      return { ...state, selectedMicId: action.deviceId };
+    case 'SET_SESSION_META':
+      return { ...state, sessionMeta: { ...state.sessionMeta, ...action.meta } };
+    case 'SET_OVERLAY_CONFIG':
+      return { ...state, overlayConfig: { ...state.overlayConfig, ...action.config } };
+    case 'SET_ERROR':
+      return { ...state, errorMessage: action.message };
+    case 'RESET':
+      return { ...INITIAL_STATE };
+  }
+}
+
+// ── Context ───────────────────────────────────────────────────
+
+interface BroadcastContextValue {
+  state: BroadcastState;
+  // Mode
+  selectMode: (mode: AppMode) => void;
+  // Camera
+  setCamera: (deviceId: string | null) => void;
+  setMic: (deviceId: string | null) => void;
+  // Connection actions
+  startBroadcast: () => Promise<void>;
+  stopBroadcast: () => void;
+  pauseBroadcast: () => void;
+  resumeBroadcast: () => void;
+  // Metadata
+  updateSessionMeta: (meta: Partial<SessionMeta>) => void;
+  updateOverlayConfig: (config: Partial<OverlayConfig>) => void;
+  // Reset
+  resetSession: () => void;
+}
+
+const BroadcastContext = createContext<BroadcastContextValue | null>(null);
+
+// ── Provider ──────────────────────────────────────────────────
+
+export function BroadcastProvider({ children }: { children: React.ReactNode }) {
+  const [state, dispatch] = useReducer(broadcastReducer, INITIAL_STATE);
+  const manager = useMemo(() => getConnectionManager(), []);
+
+  // Sync ConnectionManager events into React state
+  useEffect(() => {
+    const unsubscribe = manager.on((event) => {
+      if (event.type === 'stateChange' && event.state) {
+        dispatch({ type: 'SET_CONNECTION_STATE', state: event.state });
+      }
+      if (event.type === 'error' && event.error) {
+        dispatch({ type: 'SET_ERROR', message: event.error });
+      }
+    });
+    return unsubscribe;
+  }, [manager]);
+
+  const selectMode = useCallback((mode: AppMode) => {
+    dispatch({ type: 'SET_MODE', mode });
+  }, []);
+
+  const setCamera = useCallback((deviceId: string | null) => {
+    dispatch({ type: 'SET_CAMERA', deviceId });
+  }, []);
+
+  const setMic = useCallback((deviceId: string | null) => {
+    dispatch({ type: 'SET_MIC', deviceId });
+  }, []);
+
+  const startBroadcast = useCallback(async () => {
+    dispatch({ type: 'SET_ERROR', message: null });
+    await manager.requestMedia(state.selectedCameraId, state.selectedMicId);
+  }, [manager, state.selectedCameraId, state.selectedMicId]);
+
+  const stopBroadcast = useCallback(() => {
+    manager.stop();
+  }, [manager]);
+
+  const pauseBroadcast = useCallback(() => {
+    manager.pause();
+  }, [manager]);
+
+  const resumeBroadcast = useCallback(() => {
+    manager.resume();
+  }, [manager]);
+
+  const updateSessionMeta = useCallback((meta: Partial<SessionMeta>) => {
+    dispatch({ type: 'SET_SESSION_META', meta });
+  }, []);
+
+  const updateOverlayConfig = useCallback((config: Partial<OverlayConfig>) => {
+    dispatch({ type: 'SET_OVERLAY_CONFIG', config });
+  }, []);
+
+  const resetSession = useCallback(() => {
+    resetConnectionManager();
+    dispatch({ type: 'RESET' });
+  }, []);
+
+  const value: BroadcastContextValue = {
+    state,
+    selectMode,
+    setCamera,
+    setMic,
+    startBroadcast,
+    stopBroadcast,
+    pauseBroadcast,
+    resumeBroadcast,
+    updateSessionMeta,
+    updateOverlayConfig,
+    resetSession,
+  };
+
+  return (
+    <BroadcastContext.Provider value={value}>{children}</BroadcastContext.Provider>
+  );
+}
+
+// ── Hook ──────────────────────────────────────────────────────
+
+export function useBroadcast(): BroadcastContextValue {
+  const ctx = useContext(BroadcastContext);
+  if (!ctx) {
+    throw new Error('useBroadcast must be used inside <BroadcastProvider>');
+  }
+  return ctx;
+}

@@ -1,0 +1,63 @@
+.device-selector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.device-selector__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.device-selector__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.device-selector__label svg {
+  width: 14px;
+  height: 14px;
+}
+
+.device-selector__select {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: 0.875rem;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%236b7280'%3E%3Cpath fill-rule='evenodd' d='M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z' clip-rule='evenodd'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+  padding-right: 36px;
+}
+
+.device-selector__select:hover:not(:disabled) {
+  border-color: var(--color-accent-blue);
+}
+
+.device-selector__select:focus {
+  outline: none;
+  border-color: var(--color-accent-blue);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.device-selector__select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.device-selector__select option {
+  background: var(--color-bg-secondary);
+}
