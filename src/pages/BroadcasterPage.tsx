@@ -1,33 +1,36 @@
 /**
  * BroadcasterPage — Mobile-first camera broadcasting interface.
  *
- * User flow:
- *   1. Select camera/microphone
- *   2. Start camera (requests permission)
- *   3. Start Session → receive 6-character code
- *   4. Share code with Studio operator
- *   5. Studio connects → WebRTC video begins
- *   6. Stay Live — auto-reconnects on 5G interruption
+ * User flow (QR led):
+ *   1. Scan QR code → opens page with ?code=ABC123
+ *   2. Select camera/microphone
+ *   3. Start camera (requests permission)
+ *   4. Auto-joins session 'ABC123'
+ *   5. WebRTC video begins
+ *   6. Auto-reconnects on 5G interruption
+ * 
+ * Fallback:
+ *   If no code in URL, user can manually type a 6-character code.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { AppHeader } from '../components/common/AppHeader';
 import { CameraPreview } from '../components/broadcaster/CameraPreview';
 import { DeviceSelector } from '../components/broadcaster/DeviceSelector';
-import { SessionCodeDisplay } from '../components/broadcaster/SessionCodeDisplay';
 import { useBroadcast } from '../contexts/BroadcastContext';
 import { useMediaStream } from '../hooks/useMediaStream';
 import './BroadcasterPage.css';
 
 export function BroadcasterPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     state,
     setCamera,
     setMic,
     startCamera,
-    startSession,
+    joinSession,
     stopBroadcast,
     pauseBroadcast,
     resumeBroadcast,
@@ -41,12 +44,29 @@ export function BroadcasterPage() {
   const [mirrored, setMirrored] = useState(true);
   const [phase, setPhase] = useState<'setup' | 'camera-ready' | 'waiting' | 'live'>('setup');
   const hasStartedCamera = useRef(false);
+  const autoJoinCode = useRef<string | null>(null);
+
+  const [codeInput, setCodeInput] = useState('');
+  const [isJoining, setIsJoining] = useState(false);
 
   const cs = state.connectionState;
   const isLive = cs === 'Connected';
   const isPaused = cs === 'Paused';
   const isReconnecting = cs === 'Reconnecting';
   const isConnecting = cs === 'Connecting';
+
+  // Read code from URL on mount
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const code = params.get('code');
+    if (code && code.length === 6) {
+      autoJoinCode.current = code.toUpperCase();
+    }
+  }, [location]);
+
+  // If the user already has a sessionCode in state (e.g. they hit refresh 
+  // but context restored it, or they are reconnecting), prioritize it.
+  const activeCode = state.sessionCode || autoJoinCode.current;
 
   // Enumerate devices on mount
   useEffect(() => {
@@ -74,25 +94,39 @@ export function BroadcasterPage() {
     else setPhase('setup');
   }, [isLive, isPaused, isConnecting, isReconnecting, stream]);
 
+  const doJoinSession = useCallback(async (code: string) => {
+    setIsJoining(true);
+    try {
+      await joinSession(code, 'broadcaster');
+    } catch {
+      // Error handles via ConnectionManager -> context
+    } finally {
+      setIsJoining(false);
+    }
+  }, [joinSession]);
+
   const handleStartCamera = useCallback(async () => {
     if (hasStartedCamera.current) return;
     hasStartedCamera.current = true;
     try {
       await startStream(state.selectedCameraId, state.selectedMicId);
       await startCamera();
+      
+      // Auto-join if URL provided a code
+      if (autoJoinCode.current && !state.sessionCode) {
+        doJoinSession(autoJoinCode.current);
+      }
     } catch {
       hasStartedCamera.current = false;
     }
-  }, [startStream, startCamera, state.selectedCameraId, state.selectedMicId]);
+  }, [startStream, startCamera, state.selectedCameraId, state.selectedMicId, doJoinSession, state.sessionCode]);
 
-  const handleStartSession = useCallback(async () => {
-    try {
-      await startSession();
-    } catch {
-      // Error is already set in state.errorMessage via ConnectionManager event.
-      // Phase reverts to 'camera-ready' via the connectionState effect above.
+  const handleManualJoin = useCallback(() => {
+    const code = codeInput.replace(/\s/g, '');
+    if (code.length === 6) {
+      doJoinSession(code);
     }
-  }, [startSession]);
+  }, [codeInput, doJoinSession]);
 
   const handleStop = useCallback(() => {
     stopStream();
@@ -160,6 +194,17 @@ export function BroadcasterPage() {
           {/* PHASE: setup — choose devices */}
           {phase === 'setup' && (
             <>
+              {activeCode ? (
+                <p className="broadcaster__phase-hint">
+                  Session <strong>{activeCode}</strong> found. 
+                  <br/>Allow camera access to join.
+                </p>
+              ) : (
+                <p className="broadcaster__phase-hint">
+                  No session code in URL. Set up camera first, then enter code manually.
+                </p>
+              )}
+              
               <DeviceSelector
                 cameras={cameras}
                 microphones={microphones}
@@ -190,52 +235,62 @@ export function BroadcasterPage() {
             </>
           )}
 
-          {/* PHASE: camera-ready — start session */}
+          {/* PHASE: camera-ready (only shown if NO autoJoinCode was present) */}
           {phase === 'camera-ready' && (
             <div className="broadcaster__phase">
-              <p className="broadcaster__phase-hint">Camera is ready. Start a session to get your connection code.</p>
-              <button
-                id="btn-start-session"
-                className="btn btn--primary btn--lg btn--full"
-                onClick={handleStartSession}
-              >
-                <span className="btn__dot btn__dot--red" aria-hidden="true" />
-                Start Session
-              </button>
+              <p className="broadcaster__phase-hint">
+                Enter the 6-character code shown on the Studio's screen.
+              </p>
+              
+              <div className="broadcaster__manual-join">
+                <input
+                  type="text"
+                  placeholder="CODE"
+                  maxLength={6}
+                  value={codeInput}
+                  onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
+                  className="broadcaster__code-input"
+                  disabled={isJoining}
+                />
+                <button
+                  className="btn btn--primary btn--lg"
+                  onClick={handleManualJoin}
+                  disabled={isJoining || codeInput.trim().length < 6}
+                >
+                  {isJoining ? 'Joining…' : 'Join'}
+                </button>
+              </div>
+
               <button className="btn btn--ghost btn--sm" onClick={() => { setPhase('setup'); }}>
                 ← Change camera
               </button>
             </div>
           )}
 
-          {/* PHASE: waiting — show session code, or spinner while connecting */}
+          {/* PHASE: waiting — connecting to studio */}
           {(phase === 'waiting' || (isConnecting && !isLive)) && (
             <div className="broadcaster__phase">
-              {state.sessionCode ? (
-                <>
-                  <SessionCodeDisplay code={state.sessionCode} />
-                  <p className="broadcaster__phase-hint">
-                    {isReconnecting
-                      ? 'Reconnecting — keep the app open. Studio will rejoin automatically.'
-                      : 'Share this code with the Studio operator. Waiting for them to connect…'}
+              <div className="broadcaster__connecting">
+                <div className="broadcaster__connecting-spinner" aria-hidden="true" />
+                <p className="broadcaster__connecting-label">
+                  {isReconnecting ? 'Reconnecting to Studio…' : 'Connecting to Studio…'}
+                </p>
+                {activeCode && (
+                  <p className="broadcaster__phase-hint" style={{ marginTop: '8px' }}>
+                    Session: <strong>{activeCode}</strong>
                   </p>
-                </>
-              ) : (
-                <div className="broadcaster__connecting">
-                  <div className="broadcaster__connecting-spinner" aria-hidden="true" />
-                  <p className="broadcaster__connecting-label">Creating session…</p>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )}
 
           {/* PHASE: live */}
           {phase === 'live' && (
             <div className="broadcaster__phase">
-              {state.sessionCode && (
+              {activeCode && (
                 <div className="broadcaster__code-mini">
-                  <span className="broadcaster__code-mini-label">Code</span>
-                  <span className="broadcaster__code-mini-value">{state.sessionCode}</span>
+                  <span className="broadcaster__code-mini-label">Session</span>
+                  <span className="broadcaster__code-mini-value">{activeCode}</span>
                 </div>
               )}
               <div className="broadcaster__live-actions">

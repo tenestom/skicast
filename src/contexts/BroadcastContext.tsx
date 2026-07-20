@@ -28,6 +28,7 @@ interface BroadcastState {
   errorMessage: string | null;
   sessionCode: string | null;
   remoteStream: MediaStream | null;
+  peerJoined: boolean;
 }
 
 type BroadcastAction =
@@ -40,6 +41,7 @@ type BroadcastAction =
   | { type: 'SET_ERROR'; message: string | null }
   | { type: 'SET_SESSION_CODE'; code: string | null }
   | { type: 'SET_REMOTE_STREAM'; stream: MediaStream | null }
+  | { type: 'SET_PEER_JOINED'; joined: boolean }
   | { type: 'RESET' };
 
 const DEFAULT_SESSION_META: SessionMeta = {
@@ -67,6 +69,7 @@ const INITIAL_STATE: BroadcastState = {
   errorMessage: null,
   sessionCode: null,
   remoteStream: null,
+  peerJoined: false,
 };
 
 function broadcastReducer(state: BroadcastState, action: BroadcastAction): BroadcastState {
@@ -89,6 +92,8 @@ function broadcastReducer(state: BroadcastState, action: BroadcastAction): Broad
       return { ...state, sessionCode: action.code };
     case 'SET_REMOTE_STREAM':
       return { ...state, remoteStream: action.stream };
+    case 'SET_PEER_JOINED':
+      return { ...state, peerJoined: action.joined };
     case 'RESET':
       return { ...INITIAL_STATE };
   }
@@ -103,14 +108,13 @@ interface BroadcastContextValue {
   // Camera
   setCamera: (deviceId: string | null) => void;
   setMic: (deviceId: string | null) => void;
-  // Connection actions — Broadcaster
+  // Connection actions
   startCamera: () => Promise<void>;
-  startSession: () => Promise<string>;   // Returns session code
+  createSession: (role?: 'broadcaster' | 'studio') => Promise<string>;
+  joinSession: (code: string, role?: 'broadcaster' | 'studio') => Promise<void>;
   stopBroadcast: () => void;
   pauseBroadcast: () => void;
   resumeBroadcast: () => void;
-  // Connection actions — Studio
-  joinSession: (code: string) => Promise<void>;
   // Metadata
   updateSessionMeta: (meta: Partial<SessionMeta>) => void;
   updateOverlayConfig: (config: Partial<OverlayConfig>) => void;
@@ -139,6 +143,9 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
         case 'remoteStream':
           dispatch({ type: 'SET_REMOTE_STREAM', stream: event.stream ?? null });
           break;
+        case 'peerJoined':
+          dispatch({ type: 'SET_PEER_JOINED', joined: true });
+          break;
         case 'error':
           if (event.error) dispatch({ type: 'SET_ERROR', message: event.error });
           break;
@@ -165,16 +172,22 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     await manager.requestMedia(state.selectedCameraId, state.selectedMicId);
   }, [manager, state.selectedCameraId, state.selectedMicId]);
 
-  // Broadcaster: create session after camera is ready
-  const startSession = useCallback(async () => {
+  const createSession = useCallback(async (role: 'broadcaster' | 'studio' = 'studio') => {
     dispatch({ type: 'SET_ERROR', message: null });
-    return manager.createSession();
+    return manager.createSession(role);
+  }, [manager]);
+
+  const joinSession = useCallback(async (code: string, role: 'broadcaster' | 'studio' = 'broadcaster') => {
+    dispatch({ type: 'SET_ERROR', message: null });
+    dispatch({ type: 'SET_SESSION_CODE', code: code.toUpperCase() });
+    await manager.joinSession(code, role);
   }, [manager]);
 
   const stopBroadcast = useCallback(() => {
     manager.stop();
     dispatch({ type: 'SET_SESSION_CODE', code: null });
     dispatch({ type: 'SET_REMOTE_STREAM', stream: null });
+    dispatch({ type: 'SET_PEER_JOINED', joined: false });
   }, [manager]);
 
   const pauseBroadcast = useCallback(() => {
@@ -183,13 +196,6 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
 
   const resumeBroadcast = useCallback(() => {
     manager.resume();
-  }, [manager]);
-
-  // Studio: join broadcaster's session
-  const joinSession = useCallback(async (code: string) => {
-    dispatch({ type: 'SET_ERROR', message: null });
-    dispatch({ type: 'SET_SESSION_CODE', code: code.toUpperCase() });
-    await manager.joinSession(code);
   }, [manager]);
 
   const updateSessionMeta = useCallback((meta: Partial<SessionMeta>) => {
@@ -211,11 +217,11 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     setCamera,
     setMic,
     startCamera,
-    startSession,
+    createSession,
+    joinSession,
     stopBroadcast,
     pauseBroadcast,
     resumeBroadcast,
-    joinSession,
     updateSessionMeta,
     updateOverlayConfig,
     resetSession,

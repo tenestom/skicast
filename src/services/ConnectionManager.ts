@@ -33,6 +33,7 @@ export type ConnectionEventType =
   | 'sessionCode'     // Broadcaster received their session code
   | 'remoteStream'    // Studio received the broadcaster's video
   | 'error'
+  | 'peerJoined'
   | 'metricsUpdate';
 
 export interface ConnectionEvent {
@@ -108,12 +109,12 @@ export class ConnectionManager {
   }
 
   /**
-   * Create a new broadcast session (Broadcaster role).
-   * Connects to signaling server, creates session, waits for studio.
+   * Create a new broadcast session.
+   * Connects to signaling server, creates session, waits for peer.
    * Returns the 6-character session code.
    */
-  async createSession(): Promise<string> {
-    this._role = 'broadcaster';
+  async createSession(role: BroadcastRole = 'studio'): Promise<string> {
+    this._role = role;
     this._transition('Connecting');
 
     const signaling = getSignalingService();
@@ -134,11 +135,11 @@ export class ConnectionManager {
   }
 
   /**
-   * Join an existing session (Studio role).
-   * Connects to signaling server and joins broadcaster's session.
+   * Join an existing session.
+   * Connects to signaling server and joins session.
    */
-  async joinSession(code: string): Promise<void> {
-    this._role = 'studio';
+  async joinSession(code: string, role: BroadcastRole = 'broadcaster'): Promise<void> {
+    this._role = role;
     this._sessionCode = code.toUpperCase();
     this._transition('Connecting');
 
@@ -148,7 +149,10 @@ export class ConnectionManager {
     try {
       await signaling.connect();
       await signaling.joinSession(code);
-      // Stay in Connecting — waiting for broadcaster's offer
+      if (this._role === 'broadcaster') {
+        await this._startWebRTCBroadcaster();
+      }
+      // If studio, stay in Connecting — waiting for broadcaster's offer
     } catch (err) {
       this._emit({ type: 'error', error: String(err) });
       this._transition('Disconnected');
@@ -197,11 +201,7 @@ export class ConnectionManager {
     this._unsubSignaling = signaling.on(async (event) => {
       switch (event.type) {
         case 'peer-joined':
-          // Broadcaster: studio joined → initiate WebRTC offer
-          if (this._role === 'broadcaster') {
-            await this._startWebRTCBroadcaster();
-          }
-          // Studio: shouldn't receive peer-joined (it receives offer from broadcaster)
+          this._emit({ type: 'peerJoined' });
           break;
 
         case 'peer-left':
