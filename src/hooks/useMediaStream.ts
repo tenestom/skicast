@@ -51,11 +51,8 @@ export function useMediaStream(): UseMediaStreamResult {
       setIsLoading(true);
       setError(null);
 
-      // Stop previous stream if any
-      if (streamRef.current) {
-        console.log('[DEBUG] useMediaStream: stopping existing stream tracks');
-        streamRef.current.getTracks().forEach((t) => t.stop());
-      }
+      // Save reference to old stream so we can stop it safely AFTER replaceTrack
+      const oldStream = streamRef.current;
 
       const constraints: MediaStreamConstraints = {
         video: cameraId
@@ -71,8 +68,18 @@ export function useMediaStream(): UseMediaStreamResult {
         console.log('[DEBUG] useMediaStream: getUserMedia success. updating stream state.');
         streamRef.current = mediaStream;
         setStream(mediaStream);
+        
         // After permission granted, refresh device list with labels
         await enumerateDevices();
+        
+        // Give replaceTrack plenty of time to execute using the old track before we stop it.
+        // Stopping it too early causes iOS Safari RTCPeerConnection to freeze.
+        if (oldStream) {
+          setTimeout(() => {
+            console.log('[DEBUG] useMediaStream: stopping old stream tracks safely');
+            oldStream.getTracks().forEach((t) => t.stop());
+          }, 1000);
+        }
       } catch (err) {
         const msg =
           err instanceof DOMException
