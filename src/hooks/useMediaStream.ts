@@ -47,11 +47,13 @@ export function useMediaStream(): UseMediaStreamResult {
 
   const startStream = useCallback(
     async (cameraId?: string | null, micId?: string | null) => {
+      console.log('[DEBUG] useMediaStream: startStream called with cameraId=', cameraId, 'micId=', micId);
       setIsLoading(true);
       setError(null);
 
       // Stop previous stream if any
       if (streamRef.current) {
+        console.log('[DEBUG] useMediaStream: stopping existing stream tracks');
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
 
@@ -62,8 +64,11 @@ export function useMediaStream(): UseMediaStreamResult {
         audio: micId ? { deviceId: { exact: micId } } : true,
       };
 
+      console.log('[DEBUG] useMediaStream: calling getUserMedia with constraints=', JSON.stringify(constraints));
+
       try {
         const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        console.log('[DEBUG] useMediaStream: getUserMedia success. updating stream state.');
         streamRef.current = mediaStream;
         setStream(mediaStream);
         // After permission granted, refresh device list with labels

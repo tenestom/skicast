@@ -127,6 +127,19 @@ export class WebRTCService {
   }
 
   /**
+   * Replace the outgoing video track dynamically.
+   * Used for swapping cameras during a live broadcast without dropping the connection.
+   */
+  async replaceVideoTrack(track: MediaStreamTrack): Promise<void> {
+    if (!this._pc) return;
+    const senders = this._pc.getSenders();
+    const sender = senders.find(s => s.track?.kind === 'video');
+    if (sender) {
+      await sender.replaceTrack(track);
+    }
+  }
+
+  /**
    * Create an SDP offer (broadcaster side).
    * @returns The local session description to send to studio via signaling.
    */

@@ -38,7 +38,10 @@ export function DeviceSelector({
           id="camera-select"
           className="device-selector__select"
           value={selectedCameraId ?? ''}
-          onChange={(e) => onCameraChange(e.target.value)}
+          onChange={(e) => {
+            console.log('[DEBUG] DeviceSelector: onCameraChange fired, value=', e.target.value);
+            onCameraChange(e.target.value);
+          }}
           disabled={disabled || cameras.length === 0}
         >
           {cameras.length === 0 ? (
@@ -64,7 +67,10 @@ export function DeviceSelector({
           id="mic-select"
           className="device-selector__select"
           value={selectedMicId ?? ''}
-          onChange={(e) => onMicChange(e.target.value)}
+          onChange={(e) => {
+            console.log('[DEBUG] DeviceSelector: onMicChange fired, value=', e.target.value);
+            onMicChange(e.target.value);
+          }}
           disabled={disabled || microphones.length === 0}
         >
           {microphones.length === 0 ? (

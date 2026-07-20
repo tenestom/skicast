@@ -45,6 +45,8 @@ export function BroadcasterPage() {
   const [phase, setPhase] = useState<'setup' | 'camera-ready' | 'waiting' | 'live'>('setup');
   const hasStartedCamera = useRef(false);
   const autoJoinCode = useRef<string | null>(null);
+  const hasRequestedInitialPermission = useRef(false);
+  const prevStreamRef = useRef<MediaStream | null>(null);
 
   const [codeInput, setCodeInput] = useState('');
   const [isJoining, setIsJoining] = useState(false);
@@ -63,6 +65,25 @@ export function BroadcasterPage() {
       autoJoinCode.current = code.toUpperCase();
     }
   }, [location]);
+
+  // Request permission on mount to populate device labels
+  useEffect(() => {
+    if (!hasRequestedInitialPermission.current) {
+      hasRequestedInitialPermission.current = true;
+      startStream(null, null);
+    }
+  }, [startStream]);
+
+  // Watch for local stream changes during live broadcast to replace WebRTC track
+  useEffect(() => {
+    if (isLive && stream && stream !== prevStreamRef.current) {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack && state.replaceCameraTrack) {
+        state.replaceCameraTrack(videoTrack).catch(err => console.error('[BroadcasterPage] Failed to replace track', err));
+      }
+    }
+    prevStreamRef.current = stream;
+  }, [isLive, stream, state]);
 
   // If the user already has a sessionCode in state (e.g. they hit refresh 
   // but context restored it, or they are reconnecting), prioritize it.
@@ -191,17 +212,16 @@ export function BroadcasterPage() {
             </div>
           )}
 
-          {/* PHASE: setup — choose devices */}
-          {phase === 'setup' && (
+          {/* PRE-BROADCAST PHASE: setup or camera-ready */}
+          {(phase === 'setup' || phase === 'camera-ready') && (
             <>
               {activeCode ? (
                 <p className="broadcaster__phase-hint">
                   Session <strong>{activeCode}</strong> found. 
-                  <br/>Allow camera access to join.
                 </p>
               ) : (
                 <p className="broadcaster__phase-hint">
-                  No session code in URL. Set up camera first, then enter code manually.
+                  Set up your camera, then enter the session code.
                 </p>
               )}
               
@@ -210,61 +230,57 @@ export function BroadcasterPage() {
                 microphones={microphones}
                 selectedCameraId={state.selectedCameraId}
                 selectedMicId={state.selectedMicId}
-                onCameraChange={setCamera}
-                onMicChange={setMic}
+                onCameraChange={(deviceId) => {
+                  setCamera(deviceId);
+                  if (stream) startStream(deviceId, state.selectedMicId);
+                }}
+                onMicChange={(deviceId) => {
+                  setMic(deviceId);
+                  if (stream) startStream(state.selectedCameraId, deviceId);
+                }}
                 disabled={isLoading}
               />
-              <button
-                id="btn-start-camera"
-                className="btn btn--primary btn--lg btn--full"
-                onClick={handleStartCamera}
-                disabled={isLoading}
-                aria-busy={isLoading}
-              >
-                {isLoading ? (
-                  <><span className="btn__spinner" aria-hidden="true" /> Starting camera…</>
-                ) : (
-                  <>
-                    <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18" aria-hidden="true">
-                      <path d="M2 6a2 2 0 012-2h6l2 2h4a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
-                    </svg>
-                    Start Camera
-                  </>
-                )}
-              </button>
-            </>
-          )}
 
-          {/* PHASE: camera-ready (only shown if NO autoJoinCode was present) */}
-          {phase === 'camera-ready' && (
-            <div className="broadcaster__phase">
-              <p className="broadcaster__phase-hint">
-                Enter the 6-character code shown on the Studio's screen.
-              </p>
-              
-              <div className="broadcaster__manual-join">
-                <input
-                  type="text"
-                  placeholder="CODE"
-                  maxLength={6}
-                  value={codeInput}
-                  onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
-                  className="broadcaster__code-input"
-                  disabled={isJoining}
-                />
+              {activeCode ? (
                 <button
-                  className="btn btn--primary btn--lg"
-                  onClick={handleManualJoin}
-                  disabled={isJoining || codeInput.trim().length < 6}
+                  id="btn-start-camera"
+                  className="btn btn--primary btn--lg btn--full"
+                  onClick={handleStartCamera}
+                  disabled={isLoading}
+                  aria-busy={isLoading}
                 >
-                  {isJoining ? 'Joining…' : 'Join'}
+                  {isLoading ? (
+                    <><span className="btn__spinner" aria-hidden="true" /> Starting...</>
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18" aria-hidden="true">
+                        <path d="M2 6a2 2 0 012-2h6l2 2h4a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+                      </svg>
+                      Start Broadcast
+                    </>
+                  )}
                 </button>
-              </div>
-
-              <button className="btn btn--ghost btn--sm" onClick={() => { setPhase('setup'); }}>
-                ← Change camera
-              </button>
-            </div>
+              ) : (
+                <div className="broadcaster__manual-join">
+                  <input
+                    type="text"
+                    placeholder="CODE"
+                    maxLength={6}
+                    value={codeInput}
+                    onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
+                    className="broadcaster__code-input"
+                    disabled={isJoining}
+                  />
+                  <button
+                    className="btn btn--primary btn--lg"
+                    onClick={handleManualJoin}
+                    disabled={isJoining || codeInput.trim().length < 6}
+                  >
+                    {isJoining ? 'Joining…' : 'Join'}
+                  </button>
+                </div>
+              )}
+            </>
           )}
 
           {/* PHASE: waiting — connecting to studio */}
@@ -293,6 +309,24 @@ export function BroadcasterPage() {
                   <span className="broadcaster__code-mini-value">{activeCode}</span>
                 </div>
               )}
+
+              <div style={{ marginBottom: '16px' }}>
+                <DeviceSelector
+                  cameras={cameras}
+                  microphones={microphones}
+                  selectedCameraId={state.selectedCameraId}
+                  selectedMicId={state.selectedMicId}
+                  onCameraChange={(deviceId) => {
+                    setCamera(deviceId);
+                    if (stream) startStream(deviceId, state.selectedMicId);
+                  }}
+                  onMicChange={(deviceId) => {
+                    setMic(deviceId);
+                    if (stream) startStream(state.selectedCameraId, deviceId);
+                  }}
+                  disabled={isLoading}
+                />
+              </div>
               <div className="broadcaster__live-actions">
                 {isPaused ? (
                   <button id="btn-resume-broadcast" className="btn btn--success btn--lg" onClick={resumeBroadcast}>

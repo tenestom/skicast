@@ -16,13 +16,15 @@ export function CameraPreview({ stream, mirrored = true, className = '' }: Camer
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (stream) {
-      video.srcObject = stream;
-    } else {
-      video.srcObject = null;
+    console.log('[DEBUG] CameraPreview: useEffect triggered, stream exists:', !!stream);
+    if (videoRef.current) {
+      if (stream) {
+        console.log('[DEBUG] CameraPreview: setting video srcObject to stream', stream.id);
+        videoRef.current.srcObject = stream;
+      } else {
+        console.log('[DEBUG] CameraPreview: clearing video srcObject');
+        videoRef.current.srcObject = null;
+      }
     }
   }, [stream]);
 
