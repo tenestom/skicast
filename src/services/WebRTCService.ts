@@ -73,6 +73,7 @@ export class WebRTCService {
    * Call this before creating offer or setting remote offer.
    */
   init(): void {
+    console.log('[LIFECYCLE] WebRTCService: init() called. Creating new RTCPeerConnection.');
     this.close(); // clean up existing connection
 
     const pc = new RTCPeerConnection(RTC_CONFIGURATION);
@@ -207,7 +208,9 @@ export class WebRTCService {
    * Safe to call multiple times.
    */
   close(): void {
+    console.log('[LIFECYCLE] WebRTCService: close() called');
     if (this._pc) {
+      console.log('[LIFECYCLE] WebRTCService: closing existing RTCPeerConnection');
       this._pc.onicecandidate = null;
       this._pc.oniceconnectionstatechange = null;
       this._pc.onconnectionstatechange = null;

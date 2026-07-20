@@ -88,6 +88,7 @@ export class ConnectionManager {
    * Transitions: Disconnected → WaitingForCamera → (stream ready)
    */
   async requestMedia(cameraId?: string | null, micId?: string | null): Promise<void> {
+    console.log(`[LIFECYCLE] ConnectionManager: requestMedia called. cameraId=${cameraId}, micId=${micId}`);
     this._transition('WaitingForCamera');
 
     const constraints: MediaStreamConstraints = {
@@ -99,8 +100,10 @@ export class ConnectionManager {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log(`[LIFECYCLE] ConnectionManager: local stream acquired. Tracks: ${stream.getTracks().length}`);
       this._localStream = stream;
     } catch (err) {
+      console.error(`[LIFECYCLE] ConnectionManager: requestMedia failed`, err);
       const msg = this._mediaErrorMessage(err);
       this._emit({ type: 'error', error: msg });
       this._transition('Disconnected');
@@ -139,6 +142,7 @@ export class ConnectionManager {
    * Connects to signaling server and joins session.
    */
   async joinSession(code: string, role: BroadcastRole = 'broadcaster'): Promise<void> {
+    console.log(`[LIFECYCLE] ConnectionManager: joining session ${code} as ${role}`);
     this._role = role;
     this._sessionCode = code.toUpperCase();
     this._transition('Connecting');
@@ -148,12 +152,15 @@ export class ConnectionManager {
 
     try {
       await signaling.connect();
+      console.log(`[LIFECYCLE] ConnectionManager: signaling connected. Joining session...`);
       await signaling.joinSession(code);
+      console.log(`[LIFECYCLE] ConnectionManager: signaling session joined successfully.`);
       if (this._role === 'broadcaster') {
         await this._startWebRTCBroadcaster();
       }
       // If studio, stay in Connecting — waiting for broadcaster's offer
     } catch (err) {
+      console.error(`[LIFECYCLE] ConnectionManager: joinSession failed`, err);
       this._emit({ type: 'error', error: String(err) });
       this._transition('Disconnected');
       throw err;
@@ -176,6 +183,7 @@ export class ConnectionManager {
 
   /** Stop the session entirely */
   stop(): void {
+    console.log('[LIFECYCLE] ConnectionManager: Stop Broadcast called. Resetting state.');
     this._clearReconnectTimer();
     this._cleanupWebRTC();
     this._cleanupSignaling();
@@ -185,6 +193,7 @@ export class ConnectionManager {
     this._isReconnecting = false;
     this._reconnectAttempts = 0;
     this._transition('Stopped');
+    console.log('[LIFECYCLE] ConnectionManager: Stop Broadcast complete.');
   }
 
   /** Release all resources */
@@ -304,18 +313,23 @@ export class ConnectionManager {
   }
 
   private async _startWebRTCBroadcaster(): Promise<void> {
+    console.log('[LIFECYCLE] ConnectionManager: starting WebRTC broadcaster');
     if (!this._localStream) {
+      console.error('[LIFECYCLE] ConnectionManager: local stream is null!');
       this._emit({ type: 'error', error: 'No local stream available' });
       return;
     }
 
     this._initWebRTC();
     this._webrtc.addLocalStream(this._localStream);
+    console.log('[LIFECYCLE] ConnectionManager: local stream attached to WebRTC');
 
     try {
       const offer = await this._webrtc.createOffer();
+      console.log('[LIFECYCLE] ConnectionManager: WebRTC offer created successfully');
       getSignalingService().sendSignal(offer);
     } catch (err) {
+      console.error('[LIFECYCLE] ConnectionManager: failed to create WebRTC offer', err);
       this._emit({ type: 'error', error: `Failed to create offer: ${String(err)}` });
       this._transition('Reconnecting');
       this._scheduleReconnect();
@@ -437,6 +451,7 @@ export class ConnectionManager {
   // ── Cleanup helpers ──────────────────────────────────────────
 
   private _cleanupWebRTC(): void {
+    console.log('[LIFECYCLE] ConnectionManager: cleaning up WebRTC service');
     if (this._unsubWebRTC) {
       this._unsubWebRTC();
       this._unsubWebRTC = null;
@@ -446,6 +461,7 @@ export class ConnectionManager {
   }
 
   private _cleanupSignaling(): void {
+    console.log('[LIFECYCLE] ConnectionManager: cleaning up signaling service');
     if (this._unsubSignaling) {
       this._unsubSignaling();
       this._unsubSignaling = null;
@@ -455,8 +471,11 @@ export class ConnectionManager {
 
   private _stopLocalStream(): void {
     if (this._localStream) {
+      console.log(`[LIFECYCLE] ConnectionManager: stopping local stream tracks (${this._localStream.getTracks().length})`);
       this._localStream.getTracks().forEach(t => t.stop());
       this._localStream = null;
+    } else {
+      console.log('[LIFECYCLE] ConnectionManager: _stopLocalStream called but stream was already null');
     }
   }
 
