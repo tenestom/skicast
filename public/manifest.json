@@ -1,0 +1,37 @@
+{
+  "name": "SkiCast",
+  "short_name": "SkiCast",
+  "description": "Live broadcasting system for waterskiing competitions",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0e1a",
+  "theme_color": "#0a0e1a",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Broadcaster",
+      "url": "/broadcaster",
+      "description": "Open broadcaster mode (use on phone in boat)"
+    },
+    {
+      "name": "Studio",
+      "url": "/studio",
+      "description": "Open studio mode (use on laptop at shore)"
+    }
+  ],
+  "categories": ["sports", "utilities"]
+}

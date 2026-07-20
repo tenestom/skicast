@@ -2,98 +2,71 @@
 
 **Live broadcasting system for waterskiing competitions.**
 
-A single web application that runs in the browser — no native app required.
-Supports two operating modes: **Broadcaster** (phone in the boat) and **Studio** (laptop at the shore).
+A single web app running in the browser — no native app required.
+Phone in the boat streams live camera video to a laptop at the shore via WebRTC.
 
 ---
 
-## Status: Phase 1A — Architecture Foundation ✅
+## Status: Phase 1B-1 — Real WebRTC Connection ✅
 
-The project structure, state machine, and UI shells are complete.
-WebRTC transmission is the next milestone (Phase 1B).
+Full peer-to-peer video transmission between Broadcaster (phone) and Studio (laptop) is implemented.
 
 ---
 
 ## Quick Start
 
+### 1. Start the signaling server
+
 ```bash
-# Install dependencies
+cd signaling
 npm install
-
-# Start development server
-npm run dev
-
-# Open in browser
-# http://localhost:5173
+node server.js
+# → ws://localhost:3001
 ```
 
-### Build for Production
+### 2. Start the frontend
 
 ```bash
-npm run build
+# In the project root
+npm install
+npm run dev
+# → http://localhost:5173
 ```
+
+### 3. Test locally (two browser tabs)
+
+**Tab 1 — Broadcaster:**
+1. Open `http://localhost:5173`
+2. Click **Broadcaster**
+3. Select camera → **Start Camera**
+4. Click **Start Session** → note the 6-character code (e.g. `ABC123`)
+
+**Tab 2 — Studio:**
+1. Open `http://localhost:5173/studio`
+2. Enter the 6-character code
+3. Click **Connect to Broadcaster**
+4. Live video appears
+
+### 4. Test across devices (same WiFi)
+
+Use the Network URL shown by Vite: `http://192.168.x.x:5173`
 
 ---
 
-## Operating Modes
-
-### 📱 Broadcaster Mode
-Used on a smartphone mounted in the boat.
-
-- Requests camera and microphone permission
-- Shows live camera preview with mirror toggle
-- Device selection (camera + microphone)
-- State-driven UI (always shows current system status)
-- Auto-reconnect on signal loss (Phase 1B: WebRTC)
-
-### 🖥 Studio Mode
-Used on a laptop at the shore.
-
-- Receives the incoming broadcast stream (Phase 1B: WebRTC)
-- Production controls:
-  - Skier name, club, class information
-  - Lower-third overlay toggle
-  - Pause screen with custom message
-- Live preview of overlay compositions
-- Connection metrics panel (Phase 1B)
-
----
-
-## Architecture Highlights
-
-### State Machine
-The application uses an explicit 7-state machine:
+## Architecture
 
 ```
-Disconnected → WaitingForCamera → Connecting → Connected ↔ Reconnecting
-Connected → Paused → Connected
-Any → Stopped
+Phone (Broadcaster)                      Laptop (Studio)
+  │                                           │
+  │  ──── WebSocket (offer/answer/ICE) ───►  │
+  │  ◄─── WebSocket (answer/ICE) ──────────  │
+  │                                           │
+  │  ══════════ WebRTC video (P2P) ══════════ │
+  │     (never passes through server)         │
 ```
 
-The UI always reflects the current state. Unknown states are not possible by design.
-
-### Service Abstraction
-- **`ConnectionManager`** — Owns the broadcast lifecycle. Framework-agnostic.
-- **`SignalingService`** — WebSocket signaling abstraction (stubbed in Phase 1A).
-
-These services are decoupled from React, making them testable and portable.
-
-### Auto-Reconnect
-The `ConnectionManager` implements exponential-backoff reconnection (up to 10 attempts, max 30s delay).
-This is built into the architecture from day one — reliable reconnection on a 5G boat connection is a core requirement.
-
----
-
-## Tech Stack
-
-| Technology | Version | Purpose |
-|-----------|---------|---------|
-| Vite | 5 | Build tool |
-| React | 18 | UI framework |
-| TypeScript | 5 | Type safety |
-| React Router | 6 | Routing |
-| Vanilla CSS | — | Styling |
-| WebRTC | Native | Video (Phase 1B) |
+The **signaling server** only relays tiny JSON messages.
+**Video flows peer-to-peer** between browser tabs/devices.
 
 ---
 
@@ -101,18 +74,93 @@ This is built into the architecture from day one — reliable reconnection on a 
 
 ```
 skicast/
+├── signaling/              ← Node.js WebSocket signaling server
+│   ├── server.js           ← Main server
+│   ├── package.json
+│   └── README.md           ← Deploy instructions (Render/Railway)
+│
 ├── src/
-│   ├── types/          # TypeScript types (broadcast, WebRTC)
-│   ├── services/       # ConnectionManager, SignalingService
-│   ├── contexts/       # BroadcastContext (React bridge)
-│   ├── hooks/          # useMediaStream, useConnectionState
-│   ├── components/     # common/, broadcaster/, studio/
-│   └── pages/          # LandingPage, BroadcasterPage, StudioPage
+│   ├── config/
+│   │   └── webrtc.ts       ← ICE servers, TURN config, env vars
+│   ├── types/              ← TypeScript types
+│   ├── services/
+│   │   ├── ConnectionManager.ts   ← Orchestrates WebRTC lifecycle
+│   │   ├── WebRTCService.ts       ← RTCPeerConnection wrapper
+│   │   └── SignalingService.ts    ← WebSocket client
+│   ├── contexts/
+│   │   └── BroadcastContext.tsx   ← React state bridge
+│   ├── hooks/              ← useMediaStream, useConnectionState
+│   ├── components/         ← common/, broadcaster/, studio/
+│   └── pages/              ← Landing, Broadcaster, Studio
+│
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   └── ROADMAP.md
-└── PROJECT_RULES.md
+└── .env.example            ← Environment variable template
 ```
+
+---
+
+## Environment Variables
+
+Copy `.env.example` to `.env.local`:
+
+```bash
+cp .env.example .env.local
+```
+
+| Variable | Description |
+|----------|-------------|
+| `VITE_SIGNALING_URL` | WebSocket URL of the signaling server |
+| `VITE_TURN_URL` | Optional TURN server URL |
+| `VITE_TURN_USERNAME` | Optional TURN username |
+| `VITE_TURN_CREDENTIAL` | Optional TURN credential |
+
+---
+
+## Deploying
+
+### Frontend → Vercel
+
+```bash
+# Connect GitHub repo to Vercel
+# Set environment variable:
+VITE_SIGNALING_URL=wss://your-signaling-server.onrender.com
+```
+
+### Signaling Server → Render
+
+1. New Web Service on [render.com](https://render.com)
+2. Root dir: `signaling/`
+3. Build: `npm install`
+4. Start: `node server.js`
+5. Render sets `PORT` automatically
+
+See [`signaling/README.md`](signaling/README.md) for full deploy instructions.
+
+---
+
+## Connection States
+
+The UI always shows one of 7 states:
+
+| State | Meaning |
+|-------|---------|
+| `Disconnected` | No active session |
+| `WaitingForCamera` | Requesting camera permission |
+| `Connecting` | Signaling exchange in progress |
+| `Connected` | Live — video flowing |
+| `Reconnecting` | Network interruption — auto-recovering |
+| `Paused` | Session paused by operator |
+| `Stopped` | Session ended |
+
+---
+
+## Network Requirements
+
+- **STUN servers** (Google, Cloudflare) handle ~80% of connections
+- **5G / carrier NAT**: May require TURN. See `src/config/webrtc.ts` for setup
+- Signaling server: any server supporting WebSocket (Render free tier works)
 
 ---
 
@@ -120,22 +168,21 @@ skicast/
 
 | Phase | Feature | Status |
 |-------|---------|--------|
-| **1A** | Architecture, UI foundation, state machine | ✅ Complete |
-| **1B** | WebRTC peer connection, signaling server | 🔜 Next |
-| **2A** | Session management, multi-viewer | 📋 Planned |
+| **1A** | Architecture, UI, state machine | ✅ Done |
+| **1B-1** | WebRTC video connection | ✅ Done |
+| **1B-2** | Connection quality metrics, TURN | 🔜 Next |
+| **2A** | Multi-viewer (SFU), session management | 📋 Planned |
 | **2B** | RTMP output (Facebook Live / YouTube) | 📋 Planned |
 | **3** | Recording, replay, multi-camera | 💡 Future |
 
-See [ROADMAP.md](docs/ROADMAP.md) and [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md) and [ROADMAP.md](docs/ROADMAP.md).
 
 ---
 
 ## Development Rules
 
-See [PROJECT_RULES.md](PROJECT_RULES.md) for full rules. Summary:
-
+See [PROJECT_RULES.md](PROJECT_RULES.md). Key rules:
 - One major feature per commit
-- Test before committing
-- Reliability is more important than video quality
+- Reliability > video quality
 - Auto-reconnect is always a core feature
 - No paid infrastructure without explicit approval

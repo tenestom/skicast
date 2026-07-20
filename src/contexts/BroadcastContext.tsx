@@ -2,7 +2,7 @@
  * BroadcastContext
  *
  * Global application state powered by React Context + useReducer.
- * Wraps the ConnectionManager to bridge the service layer into React.
+ * Bridges ConnectionManager (framework-agnostic service) into React.
  */
 
 import React, {
@@ -26,6 +26,8 @@ interface BroadcastState {
   sessionMeta: SessionMeta;
   overlayConfig: OverlayConfig;
   errorMessage: string | null;
+  sessionCode: string | null;
+  remoteStream: MediaStream | null;
 }
 
 type BroadcastAction =
@@ -36,6 +38,8 @@ type BroadcastAction =
   | { type: 'SET_SESSION_META'; meta: Partial<SessionMeta> }
   | { type: 'SET_OVERLAY_CONFIG'; config: Partial<OverlayConfig> }
   | { type: 'SET_ERROR'; message: string | null }
+  | { type: 'SET_SESSION_CODE'; code: string | null }
+  | { type: 'SET_REMOTE_STREAM'; stream: MediaStream | null }
   | { type: 'RESET' };
 
 const DEFAULT_SESSION_META: SessionMeta = {
@@ -61,6 +65,8 @@ const INITIAL_STATE: BroadcastState = {
   sessionMeta: DEFAULT_SESSION_META,
   overlayConfig: DEFAULT_OVERLAY_CONFIG,
   errorMessage: null,
+  sessionCode: null,
+  remoteStream: null,
 };
 
 function broadcastReducer(state: BroadcastState, action: BroadcastAction): BroadcastState {
@@ -79,6 +85,10 @@ function broadcastReducer(state: BroadcastState, action: BroadcastAction): Broad
       return { ...state, overlayConfig: { ...state.overlayConfig, ...action.config } };
     case 'SET_ERROR':
       return { ...state, errorMessage: action.message };
+    case 'SET_SESSION_CODE':
+      return { ...state, sessionCode: action.code };
+    case 'SET_REMOTE_STREAM':
+      return { ...state, remoteStream: action.stream };
     case 'RESET':
       return { ...INITIAL_STATE };
   }
@@ -93,11 +103,14 @@ interface BroadcastContextValue {
   // Camera
   setCamera: (deviceId: string | null) => void;
   setMic: (deviceId: string | null) => void;
-  // Connection actions
-  startBroadcast: () => Promise<void>;
+  // Connection actions — Broadcaster
+  startCamera: () => Promise<void>;
+  startSession: () => Promise<string>;   // Returns session code
   stopBroadcast: () => void;
   pauseBroadcast: () => void;
   resumeBroadcast: () => void;
+  // Connection actions — Studio
+  joinSession: (code: string) => Promise<void>;
   // Metadata
   updateSessionMeta: (meta: Partial<SessionMeta>) => void;
   updateOverlayConfig: (config: Partial<OverlayConfig>) => void;
@@ -116,11 +129,19 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   // Sync ConnectionManager events into React state
   useEffect(() => {
     const unsubscribe = manager.on((event) => {
-      if (event.type === 'stateChange' && event.state) {
-        dispatch({ type: 'SET_CONNECTION_STATE', state: event.state });
-      }
-      if (event.type === 'error' && event.error) {
-        dispatch({ type: 'SET_ERROR', message: event.error });
+      switch (event.type) {
+        case 'stateChange':
+          if (event.state) dispatch({ type: 'SET_CONNECTION_STATE', state: event.state });
+          break;
+        case 'sessionCode':
+          if (event.sessionCode) dispatch({ type: 'SET_SESSION_CODE', code: event.sessionCode });
+          break;
+        case 'remoteStream':
+          dispatch({ type: 'SET_REMOTE_STREAM', stream: event.stream ?? null });
+          break;
+        case 'error':
+          if (event.error) dispatch({ type: 'SET_ERROR', message: event.error });
+          break;
       }
     });
     return unsubscribe;
@@ -138,13 +159,22 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_MIC', deviceId });
   }, []);
 
-  const startBroadcast = useCallback(async () => {
+  // Broadcaster: request camera access
+  const startCamera = useCallback(async () => {
     dispatch({ type: 'SET_ERROR', message: null });
     await manager.requestMedia(state.selectedCameraId, state.selectedMicId);
   }, [manager, state.selectedCameraId, state.selectedMicId]);
 
+  // Broadcaster: create session after camera is ready
+  const startSession = useCallback(async () => {
+    dispatch({ type: 'SET_ERROR', message: null });
+    return manager.createSession();
+  }, [manager]);
+
   const stopBroadcast = useCallback(() => {
     manager.stop();
+    dispatch({ type: 'SET_SESSION_CODE', code: null });
+    dispatch({ type: 'SET_REMOTE_STREAM', stream: null });
   }, [manager]);
 
   const pauseBroadcast = useCallback(() => {
@@ -153,6 +183,13 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
 
   const resumeBroadcast = useCallback(() => {
     manager.resume();
+  }, [manager]);
+
+  // Studio: join broadcaster's session
+  const joinSession = useCallback(async (code: string) => {
+    dispatch({ type: 'SET_ERROR', message: null });
+    dispatch({ type: 'SET_SESSION_CODE', code: code.toUpperCase() });
+    await manager.joinSession(code);
   }, [manager]);
 
   const updateSessionMeta = useCallback((meta: Partial<SessionMeta>) => {
@@ -173,10 +210,12 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     selectMode,
     setCamera,
     setMic,
-    startBroadcast,
+    startCamera,
+    startSession,
     stopBroadcast,
     pauseBroadcast,
     resumeBroadcast,
+    joinSession,
     updateSessionMeta,
     updateOverlayConfig,
     resetSession,

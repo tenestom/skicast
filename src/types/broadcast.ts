@@ -54,4 +54,8 @@ export interface AppStateShape {
   selectedCameraId: string | null;
   selectedMicId: string | null;
   errorMessage: string | null;
+  /** Session code for this broadcast (shown to broadcaster, entered by studio) */
+  sessionCode: string | null;
+  /** Remote video stream (available in Studio mode when connected) */
+  remoteStream: MediaStream | null;
 }
