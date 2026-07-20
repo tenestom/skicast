@@ -112,7 +112,6 @@ interface BroadcastContextValue {
   startCamera: () => Promise<void>;
   createSession: (role?: 'broadcaster' | 'studio') => Promise<string>;
   joinSession: (code: string, role?: 'broadcaster' | 'studio') => Promise<void>;
-  replaceCameraTrack: (track: MediaStreamTrack) => Promise<void>;
   stopBroadcast: () => void;
   pauseBroadcast: () => void;
   resumeBroadcast: () => void;
@@ -184,10 +183,6 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     await manager.joinSession(code, role);
   }, [manager]);
 
-  const replaceCameraTrack = useCallback(async (track: MediaStreamTrack) => {
-    await manager.replaceVideoTrack(track);
-  }, [manager]);
-
   const stopBroadcast = useCallback(() => {
     manager.stop();
     dispatch({ type: 'SET_SESSION_CODE', code: null });
@@ -224,7 +219,6 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     startCamera,
     createSession,
     joinSession,
-    replaceCameraTrack,
     stopBroadcast,
     pauseBroadcast,
     resumeBroadcast,

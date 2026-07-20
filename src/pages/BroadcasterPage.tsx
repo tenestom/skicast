@@ -74,20 +74,6 @@ export function BroadcasterPage() {
     }
   }, [startStream]);
 
-  // Watch for local stream changes during live broadcast to replace WebRTC track
-  useEffect(() => {
-    if (isLive && stream && stream !== prevStreamRef.current) {
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack && state.replaceCameraTrack) {
-        console.log(`[DEBUG] BroadcasterPage: Stream changed. New track id=${videoTrack.id}, readyState=${videoTrack.readyState}, enabled=${videoTrack.enabled}`);
-        state.replaceCameraTrack(videoTrack)
-          .then(() => console.log('[DEBUG] BroadcasterPage: replaceCameraTrack promise resolved successfully'))
-          .catch(err => console.error('[BroadcasterPage] Failed to replace track', err));
-      }
-    }
-    prevStreamRef.current = stream;
-  }, [isLive, stream, state]);
-
   // If the user already has a sessionCode in state (e.g. they hit refresh 
   // but context restored it, or they are reconnecting), prioritize it.
   const activeCode = state.sessionCode || autoJoinCode.current;
@@ -148,11 +134,10 @@ export function BroadcasterPage() {
   }, [codeInput, beginBroadcast]);
 
   const handleStop = useCallback(() => {
-    stopStream();
     stopBroadcast();
     hasStartedCamera.current = false;
     setPhase('setup');
-  }, [stopStream, stopBroadcast]);
+  }, [stopBroadcast]);
 
   const handleBack = useCallback(() => {
     handleStop();
@@ -230,11 +215,11 @@ export function BroadcasterPage() {
                 selectedMicId={state.selectedMicId}
                 onCameraChange={(deviceId) => {
                   setCamera(deviceId);
-                  if (stream) startStream(deviceId, state.selectedMicId);
+                  startStream(deviceId, state.selectedMicId);
                 }}
                 onMicChange={(deviceId) => {
                   setMic(deviceId);
-                  if (stream) startStream(state.selectedCameraId, deviceId);
+                  startStream(state.selectedCameraId, deviceId);
                 }}
                 disabled={isLoading}
               />
@@ -308,23 +293,6 @@ export function BroadcasterPage() {
                 </div>
               )}
 
-              <div style={{ marginBottom: '16px' }}>
-                <DeviceSelector
-                  cameras={cameras}
-                  microphones={microphones}
-                  selectedCameraId={state.selectedCameraId}
-                  selectedMicId={state.selectedMicId}
-                  onCameraChange={(deviceId) => {
-                    setCamera(deviceId);
-                    if (stream) startStream(deviceId, state.selectedMicId);
-                  }}
-                  onMicChange={(deviceId) => {
-                    setMic(deviceId);
-                    if (stream) startStream(state.selectedCameraId, deviceId);
-                  }}
-                  disabled={isLoading}
-                />
-              </div>
               <div className="broadcaster__live-actions">
                 {isPaused ? (
                   <button id="btn-resume-broadcast" className="btn btn--success btn--lg" onClick={resumeBroadcast}>

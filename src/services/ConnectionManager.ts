@@ -160,13 +160,6 @@ export class ConnectionManager {
     }
   }
 
-  /**
-   * Replace the outgoing video track dynamically.
-   */
-  async replaceVideoTrack(track: MediaStreamTrack): Promise<void> {
-    await this._webrtc.replaceVideoTrack(track);
-  }
-
   /** Pause the broadcast (keeps connection alive) */
   pause(): void {
     if (this._state === 'Connected') {

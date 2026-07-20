@@ -51,8 +51,10 @@ export function useMediaStream(): UseMediaStreamResult {
       setIsLoading(true);
       setError(null);
 
-      // Save reference to old stream so we can stop it safely AFTER replaceTrack
-      const oldStream = streamRef.current;
+      // Stop previous stream if any
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
 
       const constraints: MediaStreamConstraints = {
         video: cameraId
@@ -61,27 +63,14 @@ export function useMediaStream(): UseMediaStreamResult {
         audio: micId ? { deviceId: { exact: micId } } : true,
       };
 
-      console.log('[DEBUG] useMediaStream: calling getUserMedia with constraints=', JSON.stringify(constraints));
-
       try {
         const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-        const newTrack = mediaStream.getVideoTracks()[0];
-        console.log(`[DEBUG] useMediaStream: getUserMedia success. New track id=${newTrack?.id}, readyState=${newTrack?.readyState}, enabled=${newTrack?.enabled}`);
         
         streamRef.current = mediaStream;
         setStream(mediaStream);
         
         // After permission granted, refresh device list with labels
         await enumerateDevices();
-        
-        // Give replaceTrack plenty of time to execute using the old track before we stop it.
-        // Stopping it too early causes iOS Safari RTCPeerConnection to freeze.
-        if (oldStream) {
-          setTimeout(() => {
-            console.log('[DEBUG] useMediaStream: stopping old stream tracks safely');
-            oldStream.getTracks().forEach((t) => t.stop());
-          }, 1000);
-        }
       } catch (err) {
         const msg =
           err instanceof DOMException
