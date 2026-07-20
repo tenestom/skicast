@@ -18,7 +18,7 @@ export function VideoReceiver({ stream, connectionState, overlayContent }: Video
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const { state: { metrics, pauseBgUrl, overlayConfig } } = useBroadcast();
+  const { state: { metrics, pauseBgUrl, overlayConfig, activeScene } } = useBroadcast();
 
   useEffect(() => {
     const video = videoRef.current;
@@ -59,8 +59,8 @@ export function VideoReceiver({ stream, connectionState, overlayContent }: Video
   const isConnecting = connectionState === 'Connecting';
   const isReconnecting = connectionState === 'Reconnecting';
   
-  // The pause scene is shown when reconnecting, manually triggered, or if connection is lost
-  const showPauseScene = isReconnecting || overlayConfig.showPauseScreen;
+  // The pause scene is shown when reconnecting, or manually triggered
+  const showPauseScene = isReconnecting || activeScene === 'pause';
 
   return (
     <div 
@@ -79,7 +79,6 @@ export function VideoReceiver({ stream, connectionState, overlayContent }: Video
         aria-label="Remote camera feed"
       />
 
-      {/* Production Scene: Pause */}
       <div 
         className="video-receiver__pause-scene"
         style={{
@@ -91,11 +90,13 @@ export function VideoReceiver({ stream, connectionState, overlayContent }: Video
           transition: 'opacity 0.5s ease',
         }}
       >
-        <div className="video-receiver__pause-content">
-          <p className="video-receiver__pause-message">
-            {isReconnecting ? 'Connection to broadcaster lost\n\nReconnecting...' : (overlayConfig.pauseMessage || 'Stand By')}
-          </p>
-        </div>
+        {isReconnecting && (
+          <div className="video-receiver__pause-content">
+            <p className="video-receiver__pause-message">
+              Connection to broadcaster lost{'\n\n'}Reconnecting...
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Initial Connection Overlays */}
@@ -139,40 +140,6 @@ export function VideoReceiver({ stream, connectionState, overlayContent }: Video
       >
         {isFullscreen ? '↙️' : '⛶'}
       </button>
-
-      {/* Stats HUD */}
-      {metrics && (
-        <div className="video-receiver__stats-hud">
-          <div className="stats-hud__item">
-            <span className="stats-hud__label">Bitrate:</span>
-            <span className="stats-hud__value">{metrics.bitrateKbps} kbps</span>
-          </div>
-          <div className="stats-hud__item">
-            <span className="stats-hud__label">FPS:</span>
-            <span className="stats-hud__value">{metrics.fps}</span>
-          </div>
-          <div className="stats-hud__item">
-            <span className="stats-hud__label">RTT:</span>
-            <span className="stats-hud__value">{metrics.rttMs} ms</span>
-          </div>
-          <div className="stats-hud__item">
-            <span className="stats-hud__label">Loss:</span>
-            <span className="stats-hud__value">{metrics.packetLoss}</span>
-          </div>
-          <div className="stats-hud__item">
-            <span className="stats-hud__label">Res:</span>
-            <span className="stats-hud__value">{metrics.resolution || 'unknown'}</span>
-          </div>
-          <div className="stats-hud__item">
-            <span className="stats-hud__label">Codec:</span>
-            <span className="stats-hud__value">{metrics.codec || 'unknown'}</span>
-          </div>
-          <div className="stats-hud__item">
-            <span className="stats-hud__label">Time:</span>
-            <span className="stats-hud__value">{metrics.durationSeconds}s</span>
-          </div>
-        </div>
-      )}
 
       {/* Safe area label */}
       <div className="video-receiver__label">

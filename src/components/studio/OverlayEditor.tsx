@@ -23,7 +23,7 @@ export function OverlayEditor({
   onOverlayChange,
   disabled = false,
 }: OverlayEditorProps) {
-  const { updatePauseBg, state: { pauseBgUrl } } = useBroadcast();
+  const { updatePauseBg, setScene, state: { pauseBgUrl, activeScene } } = useBroadcast();
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -164,12 +164,12 @@ export function OverlayEditor({
         <label className="overlay-editor__toggle overlay-editor__toggle--danger">
           <input
             type="checkbox"
-            checked={overlayConfig.showPauseScreen}
-            onChange={(e) => onOverlayChange({ showPauseScreen: e.target.checked })}
+            checked={activeScene === 'pause'}
+            onChange={(e) => setScene(e.target.checked ? 'pause' : 'live')}
             disabled={disabled}
           />
           <span className="overlay-editor__toggle-track overlay-editor__toggle-track--danger" />
-          <span className="overlay-editor__toggle-label">Show pause screen</span>
+          <span className="overlay-editor__toggle-label">Enable Pause Scene</span>
         </label>
       </section>
     </div>
