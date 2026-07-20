@@ -214,19 +214,26 @@ export class SignalingService {
     this._send({ type: 'signal', payload });
   }
 
-  /**
-   * Cleanly disconnect from the signaling server.
-   */
   disconnect(): void {
+    console.log('[LIFECYCLE] SignalingService: disconnect() called');
     this._intentionalClose = true;
     this._clearTimers();
     this._connected = false;
+    
+    if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+      if (this._sessionCode) {
+        try {
+          this._ws.send(JSON.stringify({ type: 'leave-session', code: this._sessionCode }));
+        } catch (e) {
+          console.warn('[SignalingService] Failed to send leave-session', e);
+        }
+      }
+      this._ws.close(1000, 'Client disconnected');
+    }
+    
+    this._ws = null;
     this._sessionCode = null;
     this._role = null;
-    if (this._ws) {
-      this._ws.close(1000, 'Client disconnected');
-      this._ws = null;
-    }
   }
 
   // ── Private ─────────────────────────────────────────────────

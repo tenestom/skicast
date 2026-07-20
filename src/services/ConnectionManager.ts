@@ -216,6 +216,7 @@ export class ConnectionManager {
         case 'peer-left':
           if (this._state === 'Connected' || this._state === 'Paused') {
             console.log('[ConnectionManager] Peer left — entering Reconnecting');
+            this._cleanupWebRTC(); // Force destroy zombie WebRTC connection
             this._transition('Reconnecting');
             // Don't immediately reconnect — wait for peer to rejoin
           }
@@ -457,6 +458,7 @@ export class ConnectionManager {
       this._unsubWebRTC = null;
     }
     this._webrtc.close();
+    this._webrtc = new WebRTCService(); // Guarantee fresh instance for next time
     this._remoteStream = null;
   }
 
