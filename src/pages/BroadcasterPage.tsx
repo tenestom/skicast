@@ -79,7 +79,10 @@ export function BroadcasterPage() {
     if (isLive && stream && stream !== prevStreamRef.current) {
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack && state.replaceCameraTrack) {
-        state.replaceCameraTrack(videoTrack).catch(err => console.error('[BroadcasterPage] Failed to replace track', err));
+        console.log(`[DEBUG] BroadcasterPage: Stream changed. New track id=${videoTrack.id}, readyState=${videoTrack.readyState}, enabled=${videoTrack.enabled}`);
+        state.replaceCameraTrack(videoTrack)
+          .then(() => console.log('[DEBUG] BroadcasterPage: replaceCameraTrack promise resolved successfully'))
+          .catch(err => console.error('[BroadcasterPage] Failed to replace track', err));
       }
     }
     prevStreamRef.current = stream;

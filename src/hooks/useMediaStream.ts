@@ -65,7 +65,9 @@ export function useMediaStream(): UseMediaStreamResult {
 
       try {
         const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-        console.log('[DEBUG] useMediaStream: getUserMedia success. updating stream state.');
+        const newTrack = mediaStream.getVideoTracks()[0];
+        console.log(`[DEBUG] useMediaStream: getUserMedia success. New track id=${newTrack?.id}, readyState=${newTrack?.readyState}, enabled=${newTrack?.enabled}`);
+        
         streamRef.current = mediaStream;
         setStream(mediaStream);
         

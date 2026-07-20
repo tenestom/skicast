@@ -133,12 +133,13 @@ export class WebRTCService {
   async replaceVideoTrack(track: MediaStreamTrack): Promise<void> {
     if (!this._pc) return;
     const senders = this._pc.getSenders();
+    console.log(`[DEBUG] WebRTCService: found ${senders.length} RTCRtpSenders. Kinds: ${senders.map(s => s.track?.kind).join(', ')}`);
     const sender = senders.find(s => s.track?.kind === 'video');
     if (sender) {
       console.log(`[DEBUG] WebRTCService: replacing video track. Old track id=${sender.track?.id}, new track id=${track.id}`);
       try {
         await sender.replaceTrack(track);
-        console.log(`[DEBUG] WebRTCService: replaceTrack SUCCESS. Sender track is now ${sender.track?.id}`);
+        console.log(`[DEBUG] WebRTCService: replaceTrack SUCCESS. Sender track is now ${sender.track?.id}, readyState=${sender.track?.readyState}`);
       } catch (err) {
         console.error(`[DEBUG] WebRTCService: replaceTrack FAILED:`, err);
       }
