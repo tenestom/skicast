@@ -144,103 +144,108 @@ export function StudioPage() {
         {/* ── Right: Controls panel ── */}
         <aside className="studio__controls-panel" aria-label="Production controls">
 
-          {/* SESSION CONNECT (shown when disconnected) */}
-          {isDisconnected && (
-            <div className="studio__connect-panel">
-              <h2 className="studio__connect-title">Start Production</h2>
-              <p className="studio__connect-hint">
-                Create a new broadcast session and show the QR code for the boat to scan.
-              </p>
+          <div className="studio__connection-section">
+            {/* SESSION CONNECT (shown when disconnected) */}
+            {isDisconnected && (
+              <div className="studio__connect-panel">
+                <h2 className="studio__connect-title">Start Production</h2>
+                <p className="studio__connect-hint">
+                  Create a new broadcast session and show the QR code for the boat to scan.
+                </p>
 
-              <button
-                id="btn-create-broadcast"
-                className="btn btn--primary btn--lg btn--full"
-                onClick={handleCreateBroadcast}
-                disabled={isCreating}
-                aria-busy={isCreating}
-                style={{ marginTop: '20px' }}
-              >
-                {isCreating ? (
-                  <><span className="btn__spinner" aria-hidden="true" /> Creating…</>
-                ) : 'Create Broadcast'}
-              </button>
+                <button
+                  id="btn-create-broadcast"
+                  className="btn btn--primary btn--lg btn--full"
+                  onClick={handleCreateBroadcast}
+                  disabled={isCreating}
+                  aria-busy={isCreating}
+                  style={{ marginTop: '20px' }}
+                >
+                  {isCreating ? (
+                    <><span className="btn__spinner" aria-hidden="true" /> Creating…</>
+                  ) : 'Create Broadcast'}
+                </button>
+              </div>
+            )}
+
+            {/* CONNECTING STATE (QR Code or Spinner) */}
+            {isConnecting && (
+              <div className="studio__connecting-panel">
+                {connectionState === 'Reconnecting' ? (
+                  <>
+                    <div className="studio__connecting-spinner" aria-hidden="true" />
+                    <p className="studio__connecting-title">Reconnecting…</p>
+                    <p className="studio__connecting-hint">Connection lost — attempting to restore automatically.</p>
+                  </>
+                ) : !peerJoined ? (
+                  <>
+                    <p className="studio__connecting-title">Waiting for boat…</p>
+                    <p className="studio__connecting-hint">Scan this QR code with the phone in the boat to start broadcasting.</p>
+                    
+                    <div className="studio__qr-container">
+                      <QRCodeCanvas 
+                        value={getJoinUrl()} 
+                        size={220}
+                        bgColor="#ffffff"
+                        fgColor="#0a0e1a"
+                        level="H"
+                        includeMargin={true}
+                      />
+                    </div>
+                    
+                    <p className="studio__connecting-code" style={{ marginTop: '16px' }}>
+                      Or enter code manually: <strong>{sessionCode}</strong>
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="studio__connecting-spinner" aria-hidden="true" />
+                    <p className="studio__connecting-title">Boat connected!</p>
+                    <p className="studio__connecting-hint">Negotiating video connection…</p>
+                  </>
+                )}
+                
+                <button className="btn btn--ghost btn--sm" style={{ marginTop: '20px' }} onClick={handleDisconnect}>Cancel</button>
+              </div>
+            )}
+            
+            {/* CONNECTED STATE - Disconnect button */}
+            {isConnected && (
+              <div className="studio__connected-panel">
+                <button className="btn btn--danger btn--sm studio__disconnect-btn" style={{ width: '100%', marginBottom: '20px' }} onClick={handleDisconnect}>
+                  Stop Broadcast
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="studio__divider" style={{ height: '1px', background: 'var(--color-border)', margin: '16px 0' }} />
+
+          {/* PRODUCTION CONTROLS (Always Visible) */}
+          <OverlayEditor
+            sessionMeta={sessionMeta}
+            overlayConfig={overlayConfig}
+            onMetaChange={updateSessionMeta}
+            onOverlayChange={updateOverlayConfig}
+          />
+
+          {/* Lower-third preview card */}
+          {(overlayConfig.showSkierName || overlayConfig.showClubInfo) && !overlayConfig.showPauseScreen && (
+            <div className="studio__preview-card" role="region" aria-label="Overlay preview">
+              <p className="studio__preview-label">Lower Third Preview</p>
+              <div className="studio__preview-lower-third">
+                {overlayConfig.showSkierName && (
+                  <span className="studio__preview-name">
+                    {sessionMeta.skierName || 'Skier Name'}
+                  </span>
+                )}
+                {overlayConfig.showClubInfo && (
+                  <span className="studio__preview-club">
+                    {[sessionMeta.clubName, sessionMeta.className].filter(Boolean).join(' · ') || 'Club · Class'}
+                  </span>
+                )}
+              </div>
             </div>
-          )}
-
-          {/* CONNECTING STATE (QR Code or Spinner) */}
-          {isConnecting && (
-            <div className="studio__connecting-panel">
-              {connectionState === 'Reconnecting' ? (
-                <>
-                  <div className="studio__connecting-spinner" aria-hidden="true" />
-                  <p className="studio__connecting-title">Reconnecting…</p>
-                  <p className="studio__connecting-hint">Connection lost — attempting to restore automatically.</p>
-                </>
-              ) : !peerJoined ? (
-                <>
-                  <p className="studio__connecting-title">Waiting for boat…</p>
-                  <p className="studio__connecting-hint">Scan this QR code with the phone in the boat to start broadcasting.</p>
-                  
-                  <div className="studio__qr-container">
-                    <QRCodeCanvas 
-                      value={getJoinUrl()} 
-                      size={220}
-                      bgColor="#ffffff"
-                      fgColor="#0a0e1a"
-                      level="H"
-                      includeMargin={true}
-                    />
-                  </div>
-                  
-                  <p className="studio__connecting-code" style={{ marginTop: '16px' }}>
-                    Or enter code manually: <strong>{sessionCode}</strong>
-                  </p>
-                </>
-              ) : (
-                <>
-                  <div className="studio__connecting-spinner" aria-hidden="true" />
-                  <p className="studio__connecting-title">Boat connected!</p>
-                  <p className="studio__connecting-hint">Negotiating video connection…</p>
-                </>
-              )}
-              
-              <button className="btn btn--ghost btn--sm" style={{ marginTop: '20px' }} onClick={handleDisconnect}>Cancel</button>
-            </div>
-          )}
-
-          {/* CONNECTED — show production controls */}
-          {isConnected && (
-            <>
-              <OverlayEditor
-                sessionMeta={sessionMeta}
-                overlayConfig={overlayConfig}
-                onMetaChange={updateSessionMeta}
-                onOverlayChange={updateOverlayConfig}
-              />
-
-              {/* Lower-third preview card */}
-              {(overlayConfig.showSkierName || overlayConfig.showClubInfo) && !overlayConfig.showPauseScreen && (
-                <div className="studio__preview-card" role="region" aria-label="Overlay preview">
-                  <p className="studio__preview-label">Lower Third Preview</p>
-                  <div className="studio__preview-lower-third">
-                    {overlayConfig.showSkierName && (
-                      <span className="studio__preview-name">
-                        {sessionMeta.skierName || 'Skier Name'}
-                      </span>
-                    )}
-                    {overlayConfig.showClubInfo && (
-                      <span className="studio__preview-club">
-                        {[sessionMeta.clubName, sessionMeta.className].filter(Boolean).join(' · ') || 'Club · Class'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <button className="btn btn--danger btn--sm studio__disconnect-btn" onClick={handleDisconnect}>
-                Disconnect
-              </button>
-            </>
           )}
 
           <button className="btn btn--ghost studio__back-btn" onClick={handleBack}>
