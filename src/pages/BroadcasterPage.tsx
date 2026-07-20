@@ -86,8 +86,12 @@ export function BroadcasterPage() {
   }, [startStream, startCamera, state.selectedCameraId, state.selectedMicId]);
 
   const handleStartSession = useCallback(async () => {
-    await startSession();
-    setPhase('waiting');
+    try {
+      await startSession();
+    } catch {
+      // Error is already set in state.errorMessage via ConnectionManager event.
+      // Phase reverts to 'camera-ready' via the connectionState effect above.
+    }
   }, [startSession]);
 
   const handleStop = useCallback(() => {
@@ -204,15 +208,24 @@ export function BroadcasterPage() {
             </div>
           )}
 
-          {/* PHASE: waiting — show session code, waiting for studio */}
-          {(phase === 'waiting' || isReconnecting) && state.sessionCode && (
+          {/* PHASE: waiting — show session code, or spinner while connecting */}
+          {(phase === 'waiting' || (isConnecting && !isLive)) && (
             <div className="broadcaster__phase">
-              <SessionCodeDisplay code={state.sessionCode} />
-              <p className="broadcaster__phase-hint">
-                {isReconnecting
-                  ? 'Reconnecting — keep the app open. Studio will rejoin automatically.'
-                  : 'Share this code with the Studio operator. Waiting for them to connect…'}
-              </p>
+              {state.sessionCode ? (
+                <>
+                  <SessionCodeDisplay code={state.sessionCode} />
+                  <p className="broadcaster__phase-hint">
+                    {isReconnecting
+                      ? 'Reconnecting — keep the app open. Studio will rejoin automatically.'
+                      : 'Share this code with the Studio operator. Waiting for them to connect…'}
+                  </p>
+                </>
+              ) : (
+                <div className="broadcaster__connecting">
+                  <div className="broadcaster__connecting-spinner" aria-hidden="true" />
+                  <p className="broadcaster__connecting-label">Creating session…</p>
+                </div>
+              )}
             </div>
           )}
 

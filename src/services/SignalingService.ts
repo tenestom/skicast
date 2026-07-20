@@ -56,6 +56,10 @@ export class SignalingService {
   private _connectPromise: Promise<void> | null = null;
   private _connectResolve: (() => void) | null = null;
   private _connectReject: ((err: Error) => void) | null = null;
+  /** Timer that fires if WebSocket handshake takes too long */
+  private _connectTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True while the initial connect() call is still pending */
+  private _initialConnecting = false;
 
   // ── Public API ──────────────────────────────────────────────
 
@@ -83,7 +87,12 @@ export class SignalingService {
     if (url) this._url = url;
 
     if (!this._url) {
-      return Promise.reject(new Error('No signaling server URL configured. Set VITE_SIGNALING_URL.'));
+      return Promise.reject(
+        new Error(
+          'Signaling server not configured. ' +
+          'Set the VITE_SIGNALING_URL environment variable on Vercel to point to your signaling server.'
+        )
+      );
     }
 
     // Already connected
@@ -92,10 +101,32 @@ export class SignalingService {
     }
 
     this._intentionalClose = false;
+    this._initialConnecting = true;
 
     this._connectPromise = new Promise<void>((resolve, reject) => {
       this._connectResolve = resolve;
       this._connectReject = reject;
+
+      // Timeout: if WebSocket hasn't opened in 8 seconds, reject.
+      // Browsers can hold connection attempts open for 30–90s on unreachable hosts.
+      this._connectTimeoutTimer = setTimeout(() => {
+        this._connectTimeoutTimer = null;
+        const err = new Error(
+          `Cannot reach signaling server at ${this._url}. ` +
+          'Make sure the signaling server is running and VITE_SIGNALING_URL is correct.'
+        );
+        this._connectReject?.(err);
+        this._connectResolve = null;
+        this._connectReject = null;
+        // Close the socket that's still attempting to connect
+        if (this._ws) {
+          this._intentionalClose = true; // don't trigger reconnect loop
+          this._ws.close();
+          this._ws = null;
+        }
+        this._initialConnecting = false;
+      }, 8_000);
+
       this._openSocket();
     });
 
@@ -211,6 +242,12 @@ export class SignalingService {
     const ws = this._ws;
 
     ws.onopen = () => {
+      // Cancel the connection timeout — we made it
+      if (this._connectTimeoutTimer) {
+        clearTimeout(this._connectTimeoutTimer);
+        this._connectTimeoutTimer = null;
+      }
+      this._initialConnecting = false;
       console.debug('[SignalingService] Connected to', this._url);
       this._connected = true;
       this._reconnectAttempts = 0;
@@ -232,19 +269,32 @@ export class SignalingService {
 
     ws.onclose = (event) => {
       console.debug('[SignalingService] Closed', event.code, event.reason);
+      const wasInitialConnect = this._initialConnecting;
+      this._initialConnecting = false;
       this._connected = false;
       this._clearPing();
       this._emit({ type: 'disconnected' });
 
-      if (!this._intentionalClose) {
+      // Only schedule background reconnect for established connections that drop.
+      // Don't loop if the very first connect() attempt failed — the caller already
+      // received a rejected promise and will handle the error in the UI.
+      if (!this._intentionalClose && !wasInitialConnect) {
         this._scheduleReconnect();
       }
     };
 
-    ws.onerror = (err) => {
-      console.error('[SignalingService] WebSocket error', err);
-      // onclose will fire right after — handle reconnect there
-      this._connectReject?.(new Error('WebSocket connection failed. Is the signaling server running?'));
+    ws.onerror = () => {
+      // Cancel timeout — onerror + onclose will both fire; reject once here.
+      if (this._connectTimeoutTimer) {
+        clearTimeout(this._connectTimeoutTimer);
+        this._connectTimeoutTimer = null;
+      }
+      // onclose fires right after this — don't reject again there
+      const err = new Error(
+        `Cannot connect to signaling server (${this._url}). ` +
+        'Check that the server is running and VITE_SIGNALING_URL is set correctly.'
+      );
+      this._connectReject?.(err);
       this._connectResolve = null;
       this._connectReject = null;
     };
@@ -345,6 +395,10 @@ export class SignalingService {
     if (this._reconnectTimer) {
       clearTimeout(this._reconnectTimer);
       this._reconnectTimer = null;
+    }
+    if (this._connectTimeoutTimer) {
+      clearTimeout(this._connectTimeoutTimer);
+      this._connectTimeoutTimer = null;
     }
   }
 }
