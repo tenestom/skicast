@@ -126,28 +126,23 @@ export function BroadcasterPage() {
     }
   }, [joinSession]);
 
-  const handleStartCamera = useCallback(async () => {
+  const beginBroadcast = useCallback(async (code: string) => {
     if (hasStartedCamera.current) return;
     hasStartedCamera.current = true;
     try {
-      await startStream(state.selectedCameraId, state.selectedMicId);
       await startCamera();
-      
-      // Auto-join if URL provided a code
-      if (autoJoinCode.current && !state.sessionCode) {
-        doJoinSession(autoJoinCode.current);
-      }
+      await doJoinSession(code);
     } catch {
       hasStartedCamera.current = false;
     }
-  }, [startStream, startCamera, state.selectedCameraId, state.selectedMicId, doJoinSession, state.sessionCode]);
+  }, [startCamera, doJoinSession]);
 
   const handleManualJoin = useCallback(() => {
     const code = codeInput.replace(/\s/g, '');
     if (code.length === 6) {
-      doJoinSession(code);
+      beginBroadcast(code);
     }
-  }, [codeInput, doJoinSession]);
+  }, [codeInput, beginBroadcast]);
 
   const handleStop = useCallback(() => {
     stopStream();
@@ -245,12 +240,12 @@ export function BroadcasterPage() {
                 <button
                   id="btn-start-camera"
                   className="btn btn--primary btn--lg btn--full"
-                  onClick={handleStartCamera}
-                  disabled={isLoading}
-                  aria-busy={isLoading}
+                  onClick={() => beginBroadcast(activeCode)}
+                  disabled={isLoading || !stream}
+                  aria-busy={isLoading || !stream}
                 >
-                  {isLoading ? (
-                    <><span className="btn__spinner" aria-hidden="true" /> Starting...</>
+                  {isLoading || !stream ? (
+                    <><span className="btn__spinner" aria-hidden="true" /> Camera initializing...</>
                   ) : (
                     <>
                       <svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18" aria-hidden="true">
@@ -269,14 +264,14 @@ export function BroadcasterPage() {
                     value={codeInput}
                     onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
                     className="broadcaster__code-input"
-                    disabled={isJoining}
+                    disabled={isJoining || isLoading || !stream}
                   />
                   <button
                     className="btn btn--primary btn--lg"
                     onClick={handleManualJoin}
-                    disabled={isJoining || codeInput.trim().length < 6}
+                    disabled={isJoining || isLoading || !stream || codeInput.trim().length < 6}
                   >
-                    {isJoining ? 'Joining…' : 'Join'}
+                    {isJoining ? 'Joining…' : isLoading || !stream ? 'Waiting for camera...' : 'Join'}
                   </button>
                 </div>
               )}
