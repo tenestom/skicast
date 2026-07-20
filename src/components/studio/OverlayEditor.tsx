@@ -4,6 +4,8 @@
  */
 
 import type { OverlayConfig, SessionMeta } from '../../types/broadcast';
+import { useBroadcast } from '../../contexts/BroadcastContext';
+import { saveAsset, deleteAsset } from '../../utils/db';
 import './OverlayEditor.css';
 
 interface OverlayEditorProps {
@@ -21,6 +23,31 @@ export function OverlayEditor({
   onOverlayChange,
   disabled = false,
 }: OverlayEditorProps) {
+  const { updatePauseBg, state: { pauseBgUrl } } = useBroadcast();
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      await saveAsset('pause-bg', file);
+      const url = URL.createObjectURL(file);
+      updatePauseBg(url);
+    } catch (err) {
+      console.error('Failed to save pause bg:', err);
+    }
+  };
+
+  const handleClearImage = async () => {
+    try {
+      await deleteAsset('pause-bg');
+      if (pauseBgUrl) URL.revokeObjectURL(pauseBgUrl);
+      updatePauseBg(null);
+    } catch (err) {
+      console.error('Failed to delete pause bg:', err);
+    }
+  };
+
   return (
     <div className="overlay-editor">
       <h2 className="overlay-editor__title">Production Controls</h2>
@@ -110,6 +137,28 @@ export function OverlayEditor({
               placeholder="Stand By"
               disabled={disabled}
             />
+          </div>
+          <div className="overlay-editor__field">
+            <label className="overlay-editor__label">Background Image</label>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                type="file"
+                accept="image/png, image/jpeg"
+                onChange={handleImageUpload}
+                disabled={disabled}
+                style={{ flex: 1, fontSize: '0.875rem' }}
+              />
+              {pauseBgUrl && (
+                <button 
+                  className="btn btn--danger btn--sm" 
+                  onClick={handleClearImage}
+                  disabled={disabled}
+                  title="Remove image"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
         </div>
         <label className="overlay-editor__toggle overlay-editor__toggle--danger">

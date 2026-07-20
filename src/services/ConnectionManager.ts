@@ -42,6 +42,7 @@ export interface ConnectionEvent {
   sessionCode?: string;
   stream?: MediaStream;
   error?: string;
+  metrics?: WebRTCMetrics;
 }
 
 type ConnectionEventListener = (event: ConnectionEvent) => void;
@@ -304,6 +305,12 @@ export class ConnectionManager {
 
         case 'connectionChange':
           this._handleConnectionStateChange(event.connectionState!);
+          break;
+
+        case 'metricsUpdate':
+          if (event.metrics) {
+            this._emit({ type: 'metricsUpdate', metrics: event.metrics });
+          }
           break;
 
         case 'error':

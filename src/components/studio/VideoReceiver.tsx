@@ -3,8 +3,9 @@
  * Phase 1B will wire this to a WebRTC remote stream.
  */
 
-import { useRef, useEffect } from 'react';
-import type { AppState } from '../../types/broadcast';
+import { useRef, useEffect, useState, useCallback } from 'react';
+import type { AppState, WebRTCMetrics } from '../../types/broadcast';
+import { useBroadcast } from '../../contexts/BroadcastContext';
 import './VideoReceiver.css';
 
 interface VideoReceiverProps {
@@ -14,7 +15,10 @@ interface VideoReceiverProps {
 }
 
 export function VideoReceiver({ stream, connectionState, overlayContent }: VideoReceiverProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const { state: { metrics, pauseBgUrl, overlayConfig } } = useBroadcast();
 
   useEffect(() => {
     const video = videoRef.current;
@@ -22,11 +26,50 @@ export function VideoReceiver({ stream, connectionState, overlayContent }: Video
     video.srcObject = stream;
   }, [stream]);
 
+  const handleFullscreenToggle = useCallback(async () => {
+    if (!containerRef.current) return;
+    try {
+      if (!document.fullscreenElement) {
+        await containerRef.current.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (err) {
+      console.warn('Fullscreen error:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'f' && e.target === document.body) {
+        handleFullscreenToggle();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleFullscreenToggle]);
+
   const isWaiting = connectionState === 'Disconnected' || connectionState === 'Stopped';
-  const isConnecting = connectionState === 'Connecting' || connectionState === 'Reconnecting';
+  const isConnecting = connectionState === 'Connecting';
+  const isReconnecting = connectionState === 'Reconnecting';
+  
+  // The pause scene is shown when reconnecting, manually triggered, or if connection is lost
+  const showPauseScene = isReconnecting || overlayConfig.showPauseScreen;
 
   return (
-    <div className="video-receiver" role="region" aria-label="Incoming video feed">
+    <div 
+      ref={containerRef}
+      className={`video-receiver ${isFullscreen ? 'video-receiver--fullscreen' : ''}`}
+      role="region" 
+      aria-label="Incoming video feed"
+      onDoubleClick={handleFullscreenToggle}
+    >
       {/* Video element — hidden when no stream */}
       <video
         ref={videoRef}
@@ -36,8 +79,27 @@ export function VideoReceiver({ stream, connectionState, overlayContent }: Video
         aria-label="Remote camera feed"
       />
 
-      {/* Overlay states */}
-      {!stream && (
+      {/* Production Scene: Pause */}
+      <div 
+        className="video-receiver__pause-scene"
+        style={{
+          opacity: showPauseScene ? 1 : 0,
+          pointerEvents: showPauseScene ? 'auto' : 'none',
+          backgroundImage: pauseBgUrl ? `url(${pauseBgUrl})` : undefined,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          transition: 'opacity 0.5s ease',
+        }}
+      >
+        <div className="video-receiver__pause-content">
+          <p className="video-receiver__pause-message">
+            {isReconnecting ? 'Connection to broadcaster lost\n\nReconnecting...' : (overlayConfig.pauseMessage || 'Stand By')}
+          </p>
+        </div>
+      </div>
+
+      {/* Initial Connection Overlays */}
+      {!stream && !showPauseScene && (
         <div className="video-receiver__overlay">
           {isWaiting && (
             <div className="video-receiver__state">
@@ -55,30 +117,66 @@ export function VideoReceiver({ stream, connectionState, overlayContent }: Video
           {isConnecting && (
             <div className="video-receiver__state">
               <div className="video-receiver__spinner" aria-label="Connecting" />
-              <p className="video-receiver__state-title">
-                {connectionState === 'Reconnecting' ? 'Reconnecting…' : 'Connecting…'}
-              </p>
-              <p className="video-receiver__state-subtitle">
-                {connectionState === 'Reconnecting'
-                  ? 'Connection lost — attempting to reconnect'
-                  : 'Establishing broadcast connection'}
-              </p>
+              <p className="video-receiver__state-title">Connecting…</p>
+              <p className="video-receiver__state-subtitle">Establishing broadcast connection</p>
             </div>
           )}
         </div>
       )}
 
       {/* Production overlays rendered on top of video */}
-      {overlayContent && (
+      {overlayContent && !showPauseScene && (
         <div className="video-receiver__production-overlay">
           {overlayContent}
+        </div>
+      )}
+
+      {/* Fullscreen toggle button */}
+      <button 
+        className="video-receiver__fullscreen-btn" 
+        onClick={handleFullscreenToggle}
+        title={isFullscreen ? 'Exit Fullscreen (f)' : 'Enter Fullscreen (f)'}
+      >
+        {isFullscreen ? '↙️' : '⛶'}
+      </button>
+
+      {/* Stats HUD */}
+      {metrics && (
+        <div className="video-receiver__stats-hud">
+          <div className="stats-hud__item">
+            <span className="stats-hud__label">Bitrate:</span>
+            <span className="stats-hud__value">{metrics.bitrateKbps} kbps</span>
+          </div>
+          <div className="stats-hud__item">
+            <span className="stats-hud__label">FPS:</span>
+            <span className="stats-hud__value">{metrics.fps}</span>
+          </div>
+          <div className="stats-hud__item">
+            <span className="stats-hud__label">RTT:</span>
+            <span className="stats-hud__value">{metrics.rttMs} ms</span>
+          </div>
+          <div className="stats-hud__item">
+            <span className="stats-hud__label">Loss:</span>
+            <span className="stats-hud__value">{metrics.packetLoss}</span>
+          </div>
+          <div className="stats-hud__item">
+            <span className="stats-hud__label">Res:</span>
+            <span className="stats-hud__value">{metrics.resolution || 'unknown'}</span>
+          </div>
+          <div className="stats-hud__item">
+            <span className="stats-hud__label">Codec:</span>
+            <span className="stats-hud__value">{metrics.codec || 'unknown'}</span>
+          </div>
+          <div className="stats-hud__item">
+            <span className="stats-hud__label">Time:</span>
+            <span className="stats-hud__value">{metrics.durationSeconds}s</span>
+          </div>
         </div>
       )}
 
       {/* Safe area label */}
       <div className="video-receiver__label">
         <span>Program Output</span>
-        {/* Phase 1B: Resolution / bitrate indicator here */}
       </div>
     </div>
   );

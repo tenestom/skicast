@@ -14,7 +14,8 @@ import React, {
   useReducer,
 } from 'react';
 import { getConnectionManager, resetConnectionManager } from '../services/ConnectionManager';
-import type { AppMode, AppState, OverlayConfig, SessionMeta } from '../types/broadcast';
+import { loadAsset } from '../utils/db';
+import type { AppMode, AppState, OverlayConfig, SessionMeta, SceneType, WebRTCMetrics } from '../types/broadcast';
 
 // ── State & Actions ───────────────────────────────────────────
 
@@ -29,6 +30,9 @@ interface BroadcastState {
   sessionCode: string | null;
   remoteStream: MediaStream | null;
   peerJoined: boolean;
+  activeScene: SceneType;
+  metrics: WebRTCMetrics | null;
+  pauseBgUrl: string | null;
 }
 
 type BroadcastAction =
@@ -42,6 +46,9 @@ type BroadcastAction =
   | { type: 'SET_SESSION_CODE'; code: string | null }
   | { type: 'SET_REMOTE_STREAM'; stream: MediaStream | null }
   | { type: 'SET_PEER_JOINED'; joined: boolean }
+  | { type: 'SET_SCENE'; scene: SceneType }
+  | { type: 'SET_METRICS'; metrics: WebRTCMetrics | null }
+  | { type: 'SET_PAUSE_BG'; url: string | null }
   | { type: 'RESET' };
 
 const DEFAULT_SESSION_META: SessionMeta = {
@@ -55,7 +62,7 @@ const DEFAULT_OVERLAY_CONFIG: OverlayConfig = {
   showSkierName: false,
   showClubInfo: false,
   showPauseScreen: false,
-  pauseMessage: 'Stand By',
+  pauseMessage: 'Connection Lost',
   customText: '',
 };
 
@@ -70,6 +77,9 @@ const INITIAL_STATE: BroadcastState = {
   sessionCode: null,
   remoteStream: null,
   peerJoined: false,
+  activeScene: 'live',
+  metrics: null,
+  pauseBgUrl: null,
 };
 
 function broadcastReducer(state: BroadcastState, action: BroadcastAction): BroadcastState {
@@ -94,6 +104,12 @@ function broadcastReducer(state: BroadcastState, action: BroadcastAction): Broad
       return { ...state, remoteStream: action.stream };
     case 'SET_PEER_JOINED':
       return { ...state, peerJoined: action.joined };
+    case 'SET_SCENE':
+      return { ...state, activeScene: action.scene };
+    case 'SET_METRICS':
+      return { ...state, metrics: action.metrics };
+    case 'SET_PAUSE_BG':
+      return { ...state, pauseBgUrl: action.url };
     case 'RESET':
       return { ...INITIAL_STATE };
   }
@@ -118,6 +134,8 @@ interface BroadcastContextValue {
   // Metadata
   updateSessionMeta: (meta: Partial<SessionMeta>) => void;
   updateOverlayConfig: (config: Partial<OverlayConfig>) => void;
+  setScene: (scene: SceneType) => void;
+  updatePauseBg: (url: string | null) => void;
   // Reset
   resetSession: () => void;
 }
@@ -129,6 +147,22 @@ const BroadcastContext = createContext<BroadcastContextValue | null>(null);
 export function BroadcastProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(broadcastReducer, INITIAL_STATE);
   const manager = useMemo(() => getConnectionManager(), []);
+
+  // Load assets from IndexedDB
+  useEffect(() => {
+    async function load() {
+      try {
+        const bgData = await loadAsset('pause-bg');
+        if (bgData instanceof Blob) {
+          const url = URL.createObjectURL(bgData);
+          dispatch({ type: 'SET_PAUSE_BG', url });
+        }
+      } catch (err) {
+        console.warn('Failed to load pause bg', err);
+      }
+    }
+    load();
+  }, []);
 
   // Sync ConnectionManager events into React state
   useEffect(() => {
@@ -148,6 +182,9 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
           break;
         case 'error':
           if (event.error) dispatch({ type: 'SET_ERROR', message: event.error });
+          break;
+        case 'metricsUpdate':
+          if (event.metrics) dispatch({ type: 'SET_METRICS', metrics: event.metrics });
           break;
       }
     });
@@ -206,6 +243,14 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_OVERLAY_CONFIG', config });
   }, []);
 
+  const setScene = useCallback((scene: SceneType) => {
+    dispatch({ type: 'SET_SCENE', scene });
+  }, []);
+
+  const updatePauseBg = useCallback((url: string | null) => {
+    dispatch({ type: 'SET_PAUSE_BG', url });
+  }, []);
+
   const resetSession = useCallback(() => {
     resetConnectionManager();
     dispatch({ type: 'RESET' });
@@ -224,6 +269,8 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     resumeBroadcast,
     updateSessionMeta,
     updateOverlayConfig,
+    setScene,
+    updatePauseBg,
     resetSession,
   };
 

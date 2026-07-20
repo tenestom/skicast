@@ -15,6 +15,7 @@
  */
 
 import { RTC_CONFIGURATION } from '../config/webrtc';
+import type { WebRTCMetrics } from '../types/broadcast';
 
 // ── Events ────────────────────────────────────────────────────
 
@@ -23,6 +24,7 @@ export type WebRTCEventType =
   | 'remoteStream'       // Remote MediaStream received (studio only)
   | 'iceStateChange'     // RTCIceConnectionState changed
   | 'connectionChange'   // RTCPeerConnectionState changed
+  | 'metricsUpdate'      // Stats polling
   | 'negotiationNeeded'  // renegotiation needed (future use)
   | 'error';
 
@@ -32,6 +34,7 @@ export interface WebRTCEvent {
   stream?: MediaStream;
   iceState?: RTCIceConnectionState;
   connectionState?: RTCPeerConnectionState;
+  metrics?: WebRTCMetrics;
   error?: string;
 }
 
@@ -45,6 +48,12 @@ export class WebRTCService {
   private _remoteStream: MediaStream | null = null;
   private _pendingCandidates: RTCIceCandidateInit[] = [];
   private _hasRemoteDescription = false;
+  
+  private _statsInterval: ReturnType<typeof setInterval> | null = null;
+  private _lastBytesReceived = 0;
+  private _lastFramesDecoded = 0;
+  private _lastStatsTimestamp = 0;
+  private _connectionStartTime = 0;
 
   // ── Public API ──────────────────────────────────────────────
 
@@ -100,6 +109,11 @@ export class WebRTCService {
     // Overall connection state
     pc.onconnectionstatechange = () => {
       this._emit({ type: 'connectionChange', connectionState: pc.connectionState });
+      if (pc.connectionState === 'connected') {
+        this._startStatsPolling();
+      } else {
+        this._stopStatsPolling();
+      }
     };
 
     // Remote track reception (Studio receives broadcaster's camera)
@@ -222,6 +236,7 @@ export class WebRTCService {
     this._remoteStream = null;
     this._pendingCandidates = [];
     this._hasRemoteDescription = false;
+    this._stopStatsPolling();
   }
 
   // ── Private ─────────────────────────────────────────────────
@@ -238,6 +253,110 @@ export class WebRTCService {
       } catch (err) {
         console.warn('[WebRTCService] Flushing pending candidate failed:', err);
       }
+    }
+  }
+
+  private _startStatsPolling(): void {
+    if (this._statsInterval) return;
+    
+    this._connectionStartTime = Date.now();
+    this._lastBytesReceived = 0;
+    this._lastFramesDecoded = 0;
+    this._lastStatsTimestamp = 0;
+
+    this._statsInterval = setInterval(async () => {
+      if (!this._pc || this._pc.connectionState !== 'connected') {
+        this._stopStatsPolling();
+        return;
+      }
+
+      try {
+        const stats = await this._pc.getStats(null);
+        let bytesReceived = 0;
+        let framesDecoded = 0;
+        let packetsLost = 0;
+        let rttMs = 0;
+        let resolution = '';
+        let codecId = '';
+        let codec = '';
+
+        stats.forEach((report) => {
+          if (report.type === 'inbound-rtp' && report.kind === 'video') {
+            bytesReceived = report.bytesReceived || 0;
+            framesDecoded = report.framesDecoded || 0;
+            packetsLost = report.packetsLost || 0;
+            codecId = report.codecId;
+            
+            // Frame width/height if available in inbound-rtp
+            if (report.frameWidth && report.frameHeight) {
+              resolution = `${report.frameWidth}x${report.frameHeight}`;
+            }
+          }
+          if (report.type === 'remote-inbound-rtp' || report.type === 'candidate-pair') {
+            if (report.currentRoundTripTime !== undefined) {
+              rttMs = report.currentRoundTripTime * 1000;
+            }
+          }
+          if (report.type === 'track' && report.kind === 'video') {
+            if (report.frameWidth && report.frameHeight) {
+              resolution = `${report.frameWidth}x${report.frameHeight}`;
+            }
+          }
+          if (report.type === 'codec' && report.id === codecId) {
+             codec = report.mimeType?.split('/')[1] || '';
+          }
+        });
+
+        // Some stats put codec inside candidate-pair or we just find it globally
+        if (!codec) {
+          stats.forEach(report => {
+            if (report.type === 'codec' && report.mimeType?.toLowerCase().includes('video')) {
+              codec = report.mimeType.split('/')[1] || '';
+            }
+          });
+        }
+
+        const now = Date.now();
+        const timeDelta = (now - this._lastStatsTimestamp) / 1000; // seconds
+        
+        let bitrateKbps = 0;
+        let fps = 0;
+
+        if (this._lastStatsTimestamp > 0 && timeDelta > 0) {
+          const bytesDelta = bytesReceived - this._lastBytesReceived;
+          const framesDelta = framesDecoded - this._lastFramesDecoded;
+          
+          bitrateKbps = Math.max(0, Math.round((bytesDelta * 8) / timeDelta / 1000));
+          fps = Math.max(0, Math.round(framesDelta / timeDelta));
+        }
+
+        this._lastBytesReceived = bytesReceived;
+        this._lastFramesDecoded = framesDecoded;
+        this._lastStatsTimestamp = now;
+
+        const durationSeconds = Math.floor((now - this._connectionStartTime) / 1000);
+
+        const metrics: WebRTCMetrics = {
+          bitrateKbps,
+          fps,
+          rttMs: Math.round(rttMs),
+          packetLoss: packetsLost,
+          resolution,
+          codec,
+          durationSeconds,
+        };
+
+        this._emit({ type: 'metricsUpdate', metrics });
+      } catch (err) {
+        console.warn('[WebRTCService] getStats error', err);
+      }
+    }, 1000);
+  }
+
+  private _stopStatsPolling(): void {
+    if (this._statsInterval) {
+      clearInterval(this._statsInterval);
+      this._statsInterval = null;
     }
   }
 }

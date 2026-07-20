@@ -9,14 +9,19 @@
  *  Any           → Stopped
  *  Any           → Disconnected (manual disconnect / error)
  */
-export type AppState =
-  | 'Disconnected'
-  | 'WaitingForCamera'
-  | 'Connecting'
-  | 'Connected'
-  | 'Reconnecting'
-  | 'Paused'
-  | 'Stopped';
+export type ConnectionState = 'Disconnected' | 'Connecting' | 'Reconnecting' | 'Connected' | 'Paused' | 'Stopped';
+
+export type SceneType = 'live' | 'pause' | 'results' | 'sponsor' | 'interview';
+
+export interface WebRTCMetrics {
+  bitrateKbps: number;
+  fps: number;
+  rttMs: number;
+  packetLoss: number;
+  resolution: string;
+  codec: string;
+  durationSeconds: number;
+}
 
 /** The operational mode chosen on the landing page */
 export type AppMode = 'broadcaster' | 'studio';
@@ -48,14 +53,35 @@ export interface OverlayConfig {
 /** Overall application state shape */
 export interface AppStateShape {
   mode: AppMode | null;
-  connectionState: AppState;
-  sessionMeta: SessionMeta;
-  overlayConfig: OverlayConfig;
+  connectionState: ConnectionState;
+  sessionCode: string | null;
+  errorMessage: string | null;
+  peerJoined: boolean;
+
+  // Media & Production
   selectedCameraId: string | null;
   selectedMicId: string | null;
-  errorMessage: string | null;
-  /** Session code for this broadcast (shown to broadcaster, entered by studio) */
-  sessionCode: string | null;
-  /** Remote video stream (available in Studio mode when connected) */
   remoteStream: MediaStream | null;
+  
+  // Production Scene Management
+  activeScene: SceneType;
+  
+  // Configuration
+  sessionMeta: SessionMeta;
+  overlayConfig: OverlayConfig;
+
+  // Statistics
+  metrics: WebRTCMetrics | null;
 }
+export type BroadcastAction =
+  | { type: 'SET_CONNECTION_STATE'; state: ConnectionState }
+  | { type: 'SET_SESSION_CODE'; code: string | null }
+  | { type: 'SET_ERROR'; message: string | null }
+  | { type: 'SET_PEER_JOINED'; joined: boolean }
+  | { type: 'SET_CAMERA'; id: string | null }
+  | { type: 'SET_MIC'; id: string | null }
+  | { type: 'SET_REMOTE_STREAM'; stream: MediaStream | null }
+  | { type: 'SET_META'; meta: Partial<SessionMeta> }
+  | { type: 'SET_OVERLAY'; config: Partial<OverlayConfig> }
+  | { type: 'SET_SCENE'; scene: SceneType }
+  | { type: 'SET_METRICS'; metrics: WebRTCMetrics | null };
