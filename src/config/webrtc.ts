@@ -62,10 +62,9 @@ export const RTC_CONFIGURATION: RTCConfiguration = {
   rtcpMuxPolicy: 'require',
 };
 
-/** Signaling server WebSocket URL */
-export const SIGNALING_URL: string =
-  (import.meta.env.VITE_SIGNALING_URL as string | undefined) ??
-  (import.meta.env.DEV ? 'ws://localhost:3001' : '');
+/** Supabase Configuration */
+export const SUPABASE_URL: string = import.meta.env.VITE_SUPABASE_URL as string ?? '';
+export const SUPABASE_ANON_KEY: string = import.meta.env.VITE_SUPABASE_ANON_KEY as string ?? '';
 
 /** Reconnect configuration */
 export const RECONNECT_CONFIG = {
