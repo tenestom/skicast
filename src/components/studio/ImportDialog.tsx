@@ -17,6 +17,7 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
   const [pasteText, setPasteText] = useState('');
   const [parsedRows, setParsedRows] = useState<string[][]>([]);
   const [columns, setColumns] = useState<Record<number, string>>({});
+  const [isConfident, setIsConfident] = useState(false);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -28,8 +29,7 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
     
     // Parse TSV (Excel paste)
     const rows = text.trim().split('\n').map(row => row.split('\t').map(c => c.trim()));
-    setParsedRows(rows.filter(r => r.length > 0 && r.some(c => c)));
-    autoMapColumns(rows[0] || []);
+    analyzeAndMapColumns(rows);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -62,9 +62,7 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
     // Convert to arrays of strings
     const json = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: '' });
     const rows = json.map(row => row.map(cell => String(cell).trim()));
-    const validRows = rows.filter(r => r.length > 0 && r.some(c => c));
-    setParsedRows(validRows);
-    autoMapColumns(validRows[0] || []);
+    analyzeAndMapColumns(rows);
   };
 
   const parsePDF = async (file: File) => {
@@ -104,22 +102,86 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
       }
     }
 
-    setParsedRows(extractedRows);
-    autoMapColumns(extractedRows[0] || []);
+    analyzeAndMapColumns(extractedRows);
   };
 
-  const autoMapColumns = (headerRow: string[]) => {
+  const analyzeAndMapColumns = (rows: string[][]) => {
+    let confident = false;
     const newCols: Record<number, string> = {};
-    const headerLower = headerRow.map(h => h.toLowerCase());
-    
-    headerLower.forEach((h, i) => {
-      if (h.includes('name') || h.includes('skier')) newCols[i] = 'name';
-      else if (h.includes('club') || h.includes('team')) newCols[i] = 'club';
-      else if (h.includes('class') || h.includes('division')) newCols[i] = 'className';
-      else if (h.includes('bib')) newCols[i] = 'bib';
-      else if (h.includes('fed') || h.includes('country')) newCols[i] = 'federation';
-    });
+    let dataStartRow = 0;
+
+    // 1. Try to find a header row (in first 10 rows)
+    for (let r = 0; r < Math.min(10, rows.length); r++) {
+      const row = rows[r].map(c => c.toLowerCase());
+      let matches = 0;
+      const tempCols: Record<number, string> = {};
+      
+      row.forEach((h, i) => {
+        if (/name|competitor|skier/.test(h)) { tempCols[i] = 'name'; matches++; }
+        else if (/club|team/.test(h)) { tempCols[i] = 'club'; matches++; }
+        else if (/category|class|division/.test(h)) { tempCols[i] = 'className'; matches++; }
+        else if (/bib|start number|stno/.test(h)) { tempCols[i] = 'bib'; matches++; }
+        else if (/fed|country|nation/.test(h)) { tempCols[i] = 'federation'; matches++; }
+      });
+
+      if (matches >= 2) {
+        // High confidence we found a header
+        confident = true;
+        Object.assign(newCols, tempCols);
+        dataStartRow = r + 1;
+        break;
+      }
+    }
+
+    // 2. If no header found, use heuristics on the first full row
+    if (!confident && rows.length > 0) {
+      // Find the first row that has at least 3 columns of data
+      const firstDataRowIdx = rows.findIndex(r => r.filter(c => c.trim()).length >= 3);
+      if (firstDataRowIdx !== -1) {
+        const row = rows[firstDataRowIdx];
+        let nameAssigned = false;
+        let bibAssigned = false;
+        let classAssigned = false;
+
+        row.forEach((cell, i) => {
+          const val = cell.trim();
+          if (!val) return;
+
+          // Looks like a bib number?
+          if (!bibAssigned && /^\d{1,3}$/.test(val)) {
+            newCols[i] = 'bib';
+            bibAssigned = true;
+          }
+          // Looks like a Class/Category? (e.g. U14, U17, Open, O35, M1, F1)
+          else if (!classAssigned && /^(u\d{2}|open|o\d{2}|[mf]\d)$/i.test(val)) {
+            newCols[i] = 'className';
+            classAssigned = true;
+          }
+          // Looks like a name? (2 or more words, no numbers)
+          else if (!nameAssigned && /^[a-zA-ZÀ-ÿ\s\-']+$/.test(val) && val.includes(' ')) {
+            newCols[i] = 'name';
+            nameAssigned = true;
+          }
+          // Leftover strings could be club or federation
+          else if (val.length <= 3 && /^[A-Z]{3}$/.test(val)) {
+            newCols[i] = 'federation';
+          }
+          else if (val.length > 3 && !/^\d+$/.test(val)) {
+            newCols[i] = 'club';
+          }
+        });
+
+        if (nameAssigned) {
+          confident = true;
+        }
+      }
+    }
+
     setColumns(newCols);
+    setIsConfident(confident);
+    // Keep all rows, but we will filter out empty ones
+    const finalRows = rows.slice(dataStartRow).filter(r => r.length > 0 && r.some(c => c.trim()));
+    setParsedRows(finalRows);
   };
 
   const handleImport = () => {
@@ -129,9 +191,7 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
       return;
     }
 
-    const skiers: Skier[] = parsedRows.map((row, i) => {
-      // Skip header row if it seems like a header
-      if (i === 0 && row[Number(nameColIdx)]?.toLowerCase().includes('name')) return null;
+    const skiers: Skier[] = parsedRows.map((row) => {
 
       const skier: Skier = {
         id: crypto.randomUUID(),
@@ -202,15 +262,21 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
                   <tr>
                     {parsedRows[0].map((_, i) => (
                       <th key={i}>
-                        <select 
-                          value={columns[i] || ''} 
-                          onChange={(e) => setColumns(prev => ({ ...prev, [i]: e.target.value }))}
-                        >
-                          <option value="">Ignore</option>
-                          {availableFields.map(f => (
-                            <option key={f} value={f}>{f}</option>
-                          ))}
-                        </select>
+                        {isConfident ? (
+                          <div className="import-modal__confident-header">
+                            {columns[i] || 'Ignored'}
+                          </div>
+                        ) : (
+                          <select 
+                            value={columns[i] || ''} 
+                            onChange={(e) => setColumns(prev => ({ ...prev, [i]: e.target.value }))}
+                          >
+                            <option value="">Ignore</option>
+                            {availableFields.map(f => (
+                              <option key={f} value={f}>{f}</option>
+                            ))}
+                          </select>
+                        )}
                       </th>
                     ))}
                   </tr>
