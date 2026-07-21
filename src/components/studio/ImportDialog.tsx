@@ -74,34 +74,103 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
       const page = await pdf.getPage(pageNum);
       const textContent = await page.getTextContent();
       
-      // Group items by Y coordinate to form rows
       const rowMap = new Map<number, { text: string; x: number }[]>();
+      const Y_TOLERANCE = 4;
       
+      // 1. Group items by Y coordinate with tolerance
       for (const item of textContent.items) {
         if (!('str' in item)) continue;
-        const y = Math.round(item.transform[5]);
-        const x = Math.round(item.transform[4]);
+        const text = item.str.trim();
+        if (!text) continue;
+
+        const y = item.transform[5];
+        const x = item.transform[4];
         
-        if (!rowMap.has(y)) rowMap.set(y, []);
-        rowMap.get(y)!.push({ text: item.str, x });
+        let matchedY = -1;
+        for (const existingY of rowMap.keys()) {
+          if (Math.abs(existingY - y) <= Y_TOLERANCE) {
+            matchedY = existingY;
+            break;
+          }
+        }
+        
+        if (matchedY === -1) {
+          matchedY = y;
+          rowMap.set(matchedY, []);
+        }
+        
+        rowMap.get(matchedY)!.push({ text, x });
       }
 
-      // Sort rows top to bottom (highest Y usually first in PDF, so sort descending)
       const sortedY = Array.from(rowMap.keys()).sort((a, b) => b - a);
-      
-      for (const y of sortedY) {
+
+      // 2. Sort horizontally and merge close words
+      const pageRows = sortedY.map(y => {
         const items = rowMap.get(y)!;
-        // Sort items left to right
         items.sort((a, b) => a.x - b.x);
-        // Collapse items into columns if they are far apart, or just join them
-        // For simplicity, we just take them as columns
-        const rowData = items.map(i => i.text.trim()).filter(Boolean);
-        if (rowData.length > 0) {
+        
+        const merged: { text: string; x: number }[] = [];
+        for (const item of items) {
+          if (merged.length === 0) {
+            merged.push(item);
+          } else {
+            const last = merged[merged.length - 1];
+            // If words are closer than ~15px + character width, merge them
+            if (item.x - last.x < 15 + (last.text.length * 5)) {
+              last.text += ' ' + item.text;
+            } else {
+              merged.push(item);
+            }
+          }
+        }
+        return merged;
+      });
+
+      // 3. Establish column boundaries based on the row with the most items, or a header row
+      let columnXs: number[] = [];
+      for (const row of pageRows) {
+        if (row.some(i => /name|competitor|skier|club|team|class/i.test(i.text))) {
+          columnXs = row.map(i => i.x);
+          break;
+        }
+      }
+      
+      if (columnXs.length === 0) {
+        let maxItems = 0;
+        for (const row of pageRows) {
+          if (row.length > maxItems) {
+            maxItems = row.length;
+            columnXs = row.map(i => i.x);
+          }
+        }
+      }
+
+      // 4. Map items to columns
+      for (const row of pageRows) {
+        const rowData = new Array(columnXs.length).fill('');
+        for (const item of row) {
+          let closestCol = -1;
+          let minDiff = Infinity;
+          for (let i = 0; i < columnXs.length; i++) {
+            const diff = Math.abs(columnXs[i] - item.x);
+            if (diff < minDiff && diff < 80) { // Tolerate some alignment drift
+              minDiff = diff;
+              closestCol = i;
+            }
+          }
+          if (closestCol !== -1) {
+            rowData[closestCol] = rowData[closestCol] ? rowData[closestCol] + ' ' + item.text : item.text;
+          } else {
+            rowData.push(item.text);
+          }
+        }
+        if (rowData.some(cell => cell.trim())) {
           extractedRows.push(rowData);
         }
       }
     }
 
+    console.log('[ImportDialog] PDF Extracted Rows:', extractedRows);
     analyzeAndMapColumns(extractedRows);
   };
 
@@ -177,6 +246,9 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
       }
     }
 
+    console.log('[ImportDialog] Final Column Mapping:', newCols);
+    console.log('[ImportDialog] Confident:', confident);
+    
     setColumns(newCols);
     setIsConfident(confident);
     // Keep all rows, but we will filter out empty ones
