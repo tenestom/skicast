@@ -73,6 +73,7 @@ export interface AppStateShape {
   // Statistics
   metrics: WebRTCMetrics | null;
 }
+
 export type BroadcastAction =
   | { type: 'SET_CONNECTION_STATE'; state: ConnectionState }
   | { type: 'SET_SESSION_CODE'; code: string | null }

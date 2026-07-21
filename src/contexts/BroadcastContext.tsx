@@ -33,6 +33,7 @@ interface BroadcastState {
   activeScene: SceneType;
   metrics: WebRTCMetrics | null;
   pauseBgUrl: string | null;
+  activeSkier: import('../types/broadcast').Skier | null;
 }
 
 type BroadcastAction =
@@ -49,6 +50,7 @@ type BroadcastAction =
   | { type: 'SET_SCENE'; scene: SceneType }
   | { type: 'SET_METRICS'; metrics: WebRTCMetrics | null }
   | { type: 'SET_PAUSE_BG'; url: string | null }
+  | { type: 'SET_ACTIVE_SKIER'; skier: import('../types/broadcast').Skier | null }
   | { type: 'RESET' };
 
 const DEFAULT_SESSION_META: SessionMeta = {
@@ -80,6 +82,7 @@ const INITIAL_STATE: BroadcastState = {
   activeScene: 'live',
   metrics: null,
   pauseBgUrl: null,
+  activeSkier: null,
 };
 
 function broadcastReducer(state: BroadcastState, action: BroadcastAction): BroadcastState {
@@ -110,6 +113,8 @@ function broadcastReducer(state: BroadcastState, action: BroadcastAction): Broad
       return { ...state, metrics: action.metrics };
     case 'SET_PAUSE_BG':
       return { ...state, pauseBgUrl: action.url };
+    case 'SET_ACTIVE_SKIER':
+      return { ...state, activeSkier: action.skier };
     case 'RESET':
       return { ...INITIAL_STATE };
   }
@@ -136,6 +141,7 @@ interface BroadcastContextValue {
   updateOverlayConfig: (config: Partial<OverlayConfig>) => void;
   setScene: (scene: SceneType) => void;
   updatePauseBg: (url: string | null) => void;
+  setActiveSkier: (skier: import('../types/broadcast').Skier | null) => void;
   // Reset
   resetSession: () => void;
 }
@@ -251,6 +257,10 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: 'SET_PAUSE_BG', url });
   }, []);
 
+  const setActiveSkier = useCallback((skier: import('../types/broadcast').Skier | null) => {
+    dispatch({ type: 'SET_ACTIVE_SKIER', skier });
+  }, []);
+
   const resetSession = useCallback(() => {
     resetConnectionManager();
     dispatch({ type: 'RESET' });
@@ -271,6 +281,7 @@ export function BroadcastProvider({ children }: { children: React.ReactNode }) {
     updateOverlayConfig,
     setScene,
     updatePauseBg,
+    setActiveSkier,
     resetSession,
   };
 

@@ -15,16 +15,22 @@ import { QRCodeCanvas } from 'qrcode.react';
 import { AppHeader } from '../components/common/AppHeader';
 import { VideoReceiver } from '../components/studio/VideoReceiver';
 import { OverlayEditor } from '../components/studio/OverlayEditor';
+import { StartListManager } from '../components/studio/StartListManager';
 import { useBroadcast } from '../contexts/BroadcastContext';
 import './StudioPage.css';
 
 export function StudioPage() {
   const navigate = useNavigate();
   const { state, updateSessionMeta, updateOverlayConfig, createSession, stopBroadcast, resetSession } = useBroadcast();
-  const { connectionState, sessionMeta, overlayConfig, remoteStream, sessionCode, errorMessage, peerJoined } = state;
+  const { connectionState, sessionMeta, overlayConfig, remoteStream, sessionCode, errorMessage, peerJoined, activeSkier } = state;
+
+  const displaySkierName = activeSkier?.name || sessionMeta.skierName;
+  const displayClubName = activeSkier?.club || sessionMeta.clubName;
+  const displayClassName = activeSkier?.className || sessionMeta.className;
 
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'overlays' | 'startlist'>('overlays');
 
   const isDisconnected = connectionState === 'Disconnected' || connectionState === 'Stopped';
   const isConnecting = connectionState === 'Connecting' || connectionState === 'Reconnecting';
@@ -84,12 +90,12 @@ export function StudioPage() {
       )}
       {!overlayConfig.showPauseScreen && (
         <div className="studio-overlay__lower-third">
-          {overlayConfig.showSkierName && sessionMeta.skierName && (
-            <div className="studio-overlay__skier-name">{sessionMeta.skierName}</div>
+          {overlayConfig.showSkierName && displaySkierName && (
+            <div className="studio-overlay__skier-name">{displaySkierName}</div>
           )}
-          {overlayConfig.showClubInfo && (sessionMeta.clubName || sessionMeta.className) && (
+          {overlayConfig.showClubInfo && (displayClubName || displayClassName) && (
             <div className="studio-overlay__club-info">
-              {[sessionMeta.clubName, sessionMeta.className].filter(Boolean).join(' · ')}
+              {[displayClubName, displayClassName].filter(Boolean).join(' · ')}
             </div>
           )}
         </div>
@@ -221,31 +227,56 @@ export function StudioPage() {
 
           <div className="studio__divider" style={{ height: '1px', background: 'var(--color-border)', margin: '16px 0' }} />
 
-          {/* PRODUCTION CONTROLS (Always Visible) */}
-          <OverlayEditor
-            sessionMeta={sessionMeta}
-            overlayConfig={overlayConfig}
-            onMetaChange={updateSessionMeta}
-            onOverlayChange={updateOverlayConfig}
-          />
+          <div className="studio__tabs" style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+            <button 
+              className={`btn btn--sm ${activeTab === 'overlays' ? 'btn--primary' : 'btn--ghost'}`}
+              style={{ flex: 1 }}
+              onClick={() => setActiveTab('overlays')}
+            >
+              Overlays
+            </button>
+            <button 
+              className={`btn btn--sm ${activeTab === 'startlist' ? 'btn--primary' : 'btn--ghost'}`}
+              style={{ flex: 1 }}
+              onClick={() => setActiveTab('startlist')}
+            >
+              Start List
+            </button>
+          </div>
 
-          {/* Lower-third preview card */}
-          {(overlayConfig.showSkierName || overlayConfig.showClubInfo) && !overlayConfig.showPauseScreen && (
-            <div className="studio__preview-card" role="region" aria-label="Overlay preview">
-              <p className="studio__preview-label">Lower Third Preview</p>
-              <div className="studio__preview-lower-third">
-                {overlayConfig.showSkierName && (
-                  <span className="studio__preview-name">
-                    {sessionMeta.skierName || 'Skier Name'}
-                  </span>
-                )}
-                {overlayConfig.showClubInfo && (
-                  <span className="studio__preview-club">
-                    {[sessionMeta.clubName, sessionMeta.className].filter(Boolean).join(' · ') || 'Club · Class'}
-                  </span>
-                )}
-              </div>
-            </div>
+          {/* PRODUCTION CONTROLS (Always Visible) */}
+          {activeTab === 'overlays' && (
+            <>
+              <OverlayEditor
+                sessionMeta={sessionMeta}
+                overlayConfig={overlayConfig}
+                onMetaChange={updateSessionMeta}
+                onOverlayChange={updateOverlayConfig}
+              />
+
+              {/* Lower-third preview card */}
+              {(overlayConfig.showSkierName || overlayConfig.showClubInfo) && !overlayConfig.showPauseScreen && (
+                <div className="studio__preview-card" role="region" aria-label="Overlay preview">
+                  <p className="studio__preview-label">Lower Third Preview</p>
+                  <div className="studio__preview-lower-third">
+                    {overlayConfig.showSkierName && (
+                      <span className="studio__preview-name">
+                        {displaySkierName || 'Skier Name'}
+                      </span>
+                    )}
+                    {overlayConfig.showClubInfo && (
+                      <span className="studio__preview-club">
+                        {[displayClubName, displayClassName].filter(Boolean).join(' · ') || 'Club · Class'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {activeTab === 'startlist' && (
+            <StartListManager />
           )}
 
           <button className="btn btn--ghost studio__back-btn" onClick={handleBack}>

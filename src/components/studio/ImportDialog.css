@@ -1,0 +1,110 @@
+.import-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.import-modal {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+}
+
+.import-modal__title {
+  margin-top: 0;
+  margin-bottom: 24px;
+}
+
+.import-modal__methods {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.import-modal__method {
+  flex: 1;
+  background: var(--color-surface-elevated);
+  padding: 24px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.import-modal__method h3 {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.import-modal__method p {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  margin-bottom: 16px;
+}
+
+.import-modal__textarea {
+  width: 100%;
+  height: 120px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  font-family: monospace;
+  resize: vertical;
+}
+
+.import-modal__preview {
+  margin-bottom: 24px;
+  padding: 24px;
+  background: var(--color-surface-elevated);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.import-modal__table-wrapper {
+  overflow-x: auto;
+  margin-top: 16px;
+}
+
+.import-modal__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.import-modal__table th,
+.import-modal__table td {
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.import-modal__table th select {
+  width: 100%;
+  background: rgba(255,255,255,0.1);
+  color: white;
+  border: none;
+  padding: 4px;
+}
+
+.import-modal__note {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-top: 8px;
+}
+
+.import-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}

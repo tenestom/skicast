@@ -1,0 +1,124 @@
+.startlist {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+}
+
+.startlist__header {
+  display: flex;
+  gap: 8px;
+}
+
+.startlist__select {
+  flex: 1;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.startlist__select:focus {
+  border-color: var(--color-accent-blue);
+}
+
+.startlist__toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+.startlist__list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.startlist__empty {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  text-align: center;
+  padding: 32px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--color-border);
+}
+
+.startlist__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s;
+}
+
+.startlist__item:hover {
+  border-color: rgba(255,255,255,0.2);
+}
+
+.startlist__item--active {
+  border-color: var(--color-accent-blue);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.startlist__item-drag {
+  color: var(--color-text-muted);
+  cursor: grab;
+  opacity: 0.5;
+  font-weight: bold;
+}
+
+.startlist__item-drag:active {
+  cursor: grabbing;
+}
+
+.startlist__item-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.startlist__item-name {
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.startlist__item-bib {
+  background: rgba(255,255,255,0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-family: monospace;
+}
+
+.startlist__item-meta {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.startlist__item-delete {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.startlist__item-delete:hover {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+}
