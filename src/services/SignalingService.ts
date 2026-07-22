@@ -377,7 +377,7 @@ export class SignalingService {
     this._rejoinSessionCalled = true;
 
     this._send({
-      type: 'join',
+      type: 'rejoin-session',
       code: this._sessionCode,
       role: this._role
     });
@@ -400,20 +400,7 @@ export class SignalingService {
 
     this._reconnectTimer = setTimeout(async () => {
       this._openSocket();
-      // If we have a session, rejoin after reconnect
-      if (this._sessionCode && this._role) {
-        const code = this._sessionCode;
-        const role = this._role;
-        // Wait for 'connected' then rejoin
-        const unsub = this.on((event) => {
-          if (event.type === 'connected') {
-            unsub();
-            this.rejoinSession(code, role).catch(err => {
-              console.error('[SignalingService] Rejoin failed:', err);
-            });
-          }
-        });
-      }
+      // _openSocket() handles calling _rejoinSession() when it successfully opens
     }, delay);
   }
 

@@ -66,6 +66,7 @@ export class ConnectionManager {
   private _reconnectAttempts = 0;
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _isReconnecting = false;
+  private _iceRestartTimer: ReturnType<typeof setTimeout> | null = null;
 
   private _log(category: string, message: string) {
     if (!this._role) return;
@@ -234,10 +235,22 @@ export class ConnectionManager {
       switch (event.type) {
         case 'connected':
           this._log('SIGNAL', 'connected');
+          // If we are supposed to be connected but WebRTC is failed, we might need to recover.
+          // However, we wait for session-rejoined to guarantee signaling is fully restored.
           break;
         case 'peer-joined':
           this._log('SIGNAL', 'peer joined');
           this._emit({ type: 'peerJoined' });
+          break;
+
+        case 'session-rejoined':
+          this._log('SIGNAL', 'session rejoined');
+          if (this._role === 'broadcaster') {
+            const pcState = this._webrtc.peerConnection?.connectionState;
+            if (!pcState || pcState === 'failed' || pcState === 'disconnected' || pcState === 'closed') {
+              this._handleIceFailed(); // Trigger WebRTC recovery if signaling comes back but WebRTC is still dead
+            }
+          }
           break;
 
         case 'peer-left':
@@ -411,6 +424,10 @@ export class ConnectionManager {
 
       case 'failed':
         console.warn('[ConnectionManager] ICE failed — attempting ICE restart');
+        if (this._role === 'studio') {
+          this._remoteStream = null;
+          this._emit({ type: 'remoteStream', stream: undefined });
+        }
         this._handleIceFailed();
         break;
 
@@ -418,6 +435,10 @@ export class ConnectionManager {
         // Transient — give it a moment before acting
         setTimeout(() => {
           if (this._webrtc.iceConnectionState === 'disconnected') {
+            if (this._role === 'studio') {
+              this._remoteStream = null;
+              this._emit({ type: 'remoteStream', stream: undefined });
+            }
             this._transition('Reconnecting');
             this._handleIceFailed();
           }
@@ -435,40 +456,76 @@ export class ConnectionManager {
 
   private _handleConnectionStateChange(state: RTCPeerConnectionState): void {
     console.debug('[ConnectionManager] Connection state:', state);
-    if (state === 'failed') {
+    if (state === 'failed' || state === 'disconnected') {
+      if (this._role === 'studio') {
+        this._remoteStream = null;
+        this._emit({ type: 'remoteStream', stream: undefined }); // Clears stale video
+      }
       this._transition('Reconnecting');
       this._handleIceFailed();
     } else if (state === 'connected') {
       console.log('[DEBUG] Connection connected');
       this._isReconnecting = false;
       this._reconnectAttempts = 0;
+      if (this._iceRestartTimer) {
+        clearTimeout(this._iceRestartTimer);
+        this._iceRestartTimer = null;
+      }
       this._transition('Connected');
     }
   }
 
   private async _handleIceFailed(): Promise<void> {
     if (this._role === 'broadcaster') {
-      console.log('[BROADCASTER DEBUG] Broadcaster ICE/Connection failed. Creating fresh RTCPeerConnection and sending new offer.');
+      console.log('[BROADCASTER DEBUG] Broadcaster ICE/Connection failed. Attempting ICE restart.');
       
-      this._initWebRTC(); // Close the old RTCPeerConnection and Create a fresh RTCPeerConnection
-      
-      // Reattach the existing local media tracks
-      if (this._localStream) {
-        this._webrtc.addLocalStream(this._localStream);
+      if (!this._iceRestartTimer) {
+        // Step 1: ICE restart (lighter fix)
+        try {
+          const restartOffer = await this._webrtc.restartIce();
+          if (restartOffer) {
+            getSignalingService().sendSignal({ ...restartOffer, type: 'ice-restart-offer' });
+            this._transition('Reconnecting');
+            
+            this._iceRestartTimer = setTimeout(() => {
+              console.log('[BROADCASTER DEBUG] ICE restart timed out after 8s. Falling back to full WebRTC reconnect.');
+              this._iceRestartTimer = null;
+              this._performFullWebRTCReconnect();
+            }, 8000);
+            return;
+          }
+        } catch (err) {
+          console.error('[BROADCASTER DEBUG] ICE restart failed immediately:', err);
+        }
       }
-      
-      // Generate and send a new offer
-      try {
-        const offer = await this._webrtc.createOffer();
-        getSignalingService().sendSignal(offer);
-        this._transition('Reconnecting');
-        return;
-      } catch (err) {
-        console.error('Failed to create fresh offer for reconnect', err);
-      }
+      // If we are already waiting for an ICE restart or it failed instantly, do full reconnect
+      this._performFullWebRTCReconnect();
+    } else {
+      // Studio just waits. It resets the stream (done above in handleConnectionStateChange)
+      this._scheduleReconnect();
     }
-    // Fall back to full reconnect
-    this._scheduleReconnect();
+  }
+
+  private async _performFullWebRTCReconnect(): Promise<void> {
+    if (this._role !== 'broadcaster') return;
+    
+    console.log('[BROADCASTER DEBUG] Performing full WebRTC reconnection.');
+    this._initWebRTC(); // Close the old RTCPeerConnection and Create a fresh RTCPeerConnection
+    
+    // Reattach the existing local media tracks
+    if (this._localStream) {
+      this._webrtc.addLocalStream(this._localStream);
+    }
+    
+    // Generate and send a new offer
+    try {
+      const offer = await this._webrtc.createOffer();
+      getSignalingService().sendSignal(offer);
+      this._transition('Reconnecting');
+    } catch (err) {
+      console.error('Failed to create fresh offer for reconnect', err);
+      this._scheduleReconnect(); // ultimate fallback
+    }
   }
 
   // ── Reconnection ─────────────────────────────────────────────
