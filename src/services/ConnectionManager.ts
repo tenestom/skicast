@@ -149,7 +149,12 @@ export class ConnectionManager {
 
     try {
       await signaling.connect();
-      const code = await signaling.createSession();
+      
+      if (!this._role) {
+        throw new Error('ConnectionManager role is undefined before createSession');
+      }
+
+      const code = await signaling.createSession(this._role);
       this._sessionCode = code;
       this._emit({ type: 'sessionCode', sessionCode: code });
       // Stay in Connecting — waiting for studio to join
@@ -177,7 +182,12 @@ export class ConnectionManager {
     try {
       await signaling.connect();
       console.log(`[LIFECYCLE] ConnectionManager: signaling connected. Joining session...`);
-      await signaling.joinSession(code);
+      
+      if (!this._role) {
+        throw new Error('ConnectionManager role is undefined before joinSession');
+      }
+
+      await signaling.joinSession(code, this._role);
       console.log(`[LIFECYCLE] ConnectionManager: signaling session joined successfully.`);
       if (this._role === 'broadcaster') {
         await this._startWebRTCBroadcaster();

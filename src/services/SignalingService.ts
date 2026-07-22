@@ -152,6 +152,9 @@ export class SignalingService {
    * Must call connect() first.
    */
   createSession(role: SignalingRole): Promise<string> {
+    if (!role) {
+      return Promise.reject(new Error('SignalingService: role is required to create a session'));
+    }
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Session creation timeout')), 10_000);
 
@@ -178,6 +181,9 @@ export class SignalingService {
    * Must call connect() first.
    */
   joinSession(code: string, role: SignalingRole): Promise<void> {
+    if (!role) {
+      return Promise.reject(new Error('SignalingService: role is required to join a session'));
+    }
     this._rejoinSessionCalled = false;
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Session join timeout')), 10_000);
@@ -204,6 +210,9 @@ export class SignalingService {
    * Rejoin an existing session after reconnection.
    */
   rejoinSession(code: string, role: SignalingRole): Promise<void> {
+    if (!role) {
+      return Promise.reject(new Error('SignalingService: role is required to rejoin a session'));
+    }
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Rejoin timeout')), 10_000);
 
