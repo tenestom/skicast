@@ -189,30 +189,39 @@ export function StudioPage() {
                     <p className="studio__connecting-hint">Scan this QR code with the phone in the boat to start broadcasting.</p>
                     
                     <div className="studio__qr-container">
-                      {(() => {
-                        const qrValue = getJoinUrl();
-                        console.log("QR VALUE:", qrValue);
-                        return (
-                          <>
-                            <QRCodeCanvas 
-                              value={qrValue} 
-                              size={220}
-                              bgColor="#ffffff"
-                              fgColor="#0a0e1a"
-                              level="H"
-                              includeMargin={true}
-                            />
-                            <div style={{ marginTop: '10px', fontSize: '11px', wordBreak: 'break-all', color: 'var(--color-text-muted)', textAlign: 'center' }}>
-                              Debug URL: {qrValue}
-                            </div>
-                          </>
-                        );
-                      })()}
+                      {sessionCode ? (
+                        (() => {
+                          const qrValue = getJoinUrl();
+                          console.log("QR VALUE:", qrValue);
+                          return (
+                            <>
+                              <QRCodeCanvas 
+                                value={qrValue} 
+                                size={220}
+                                bgColor="#ffffff"
+                                fgColor="#0a0e1a"
+                                level="H"
+                                includeMargin={true}
+                              />
+                              <div style={{ marginTop: '10px', fontSize: '11px', wordBreak: 'break-all', color: 'var(--color-text-muted)', textAlign: 'center' }}>
+                                Debug URL: {qrValue}
+                              </div>
+                            </>
+                          );
+                        })()
+                      ) : (
+                        <div style={{ height: '220px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                          <div className="studio__connecting-spinner" aria-hidden="true" style={{ marginBottom: '16px' }} />
+                          <p>Creating broadcast...</p>
+                        </div>
+                      )}
                     </div>
                     
-                    <p className="studio__connecting-code" style={{ marginTop: '16px' }}>
-                      Or enter code manually: <strong>{sessionCode}</strong>
-                    </p>
+                    {sessionCode && (
+                      <p className="studio__connecting-code" style={{ marginTop: '16px' }}>
+                        Or enter code manually: <strong>{sessionCode}</strong>
+                      </p>
+                    )}
                   </>
                 ) : (
                   <>
