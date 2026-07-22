@@ -189,14 +189,25 @@ export function StudioPage() {
                     <p className="studio__connecting-hint">Scan this QR code with the phone in the boat to start broadcasting.</p>
                     
                     <div className="studio__qr-container">
-                      <QRCodeCanvas 
-                        value={getJoinUrl()} 
-                        size={220}
-                        bgColor="#ffffff"
-                        fgColor="#0a0e1a"
-                        level="H"
-                        includeMargin={true}
-                      />
+                      {(() => {
+                        const qrValue = getJoinUrl();
+                        console.log("QR VALUE:", qrValue);
+                        return (
+                          <>
+                            <QRCodeCanvas 
+                              value={qrValue} 
+                              size={220}
+                              bgColor="#ffffff"
+                              fgColor="#0a0e1a"
+                              level="H"
+                              includeMargin={true}
+                            />
+                            <div style={{ marginTop: '10px', fontSize: '11px', wordBreak: 'break-all', color: 'var(--color-text-muted)', textAlign: 'center' }}>
+                              Debug URL: {qrValue}
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
                     
                     <p className="studio__connecting-code" style={{ marginTop: '16px' }}>
