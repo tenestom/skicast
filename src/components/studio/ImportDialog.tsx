@@ -261,6 +261,14 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
     if (nameColIdx === undefined) return [];
 
     return parsedRows.map((row) => {
+      // 1. Header row filtering
+      const isHeader = Object.entries(columns).some(([colIdxStr, fieldName]) => {
+        if (!['name', 'club', 'className', 'bib', 'federation'].includes(fieldName)) return false;
+        const val = row[Number(colIdxStr)]?.toLowerCase().trim() || '';
+        return /^(name|skier|competitor|club|team|federation|category|categ\.?|class|division|group|bib|start|start number|stno)$/i.test(val);
+      });
+      if (isHeader) return null;
+
       const skier: Skier = {
         id: crypto.randomUUID(),
         name: '',
@@ -299,6 +307,15 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
 
   const availableFields = ['name', 'club', 'className', 'bib'];
   const draftSkiers = buildDraftSkiers();
+  
+  // Filtered rows for raw preview so header rows aren't shown
+  const previewRawRows = parsedRows.filter(row => {
+    return !Object.entries(columns).some(([colIdxStr, fieldName]) => {
+      if (!['name', 'club', 'className', 'bib', 'federation'].includes(fieldName)) return false;
+      const val = row[Number(colIdxStr)]?.toLowerCase().trim() || '';
+      return /^(name|skier|competitor|club|team|federation|category|categ\.?|class|division|group|bib|start|start number|stno)$/i.test(val);
+    });
+  });
 
   return (
     <div className="import-modal-overlay">
@@ -380,7 +397,7 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
                     </tr>
                   </thead>
                   <tbody>
-                    {parsedRows.slice(0, 5).map((row, rowIndex) => (
+                    {previewRawRows.slice(0, 5).map((row, rowIndex) => (
                       <tr key={rowIndex}>
                         {row.map((cell, cellIndex) => {
                           // Show normalized preview inline for mapped columns
