@@ -18,6 +18,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { AppHeader } from '../components/common/AppHeader';
 import { CameraPreview } from '../components/broadcaster/CameraPreview';
 import { DeviceSelector } from '../components/broadcaster/DeviceSelector';
+import { DebugPanel } from '../components/common/DebugPanel';
 import { useBroadcast } from '../contexts/BroadcastContext';
 import { useMediaStream } from '../hooks/useMediaStream';
 import './BroadcasterPage.css';
@@ -315,6 +316,7 @@ export function BroadcasterPage() {
           </button>
         </section>
       </div>
+      <DebugPanel role="broadcaster" />
     </div>
   );
 }

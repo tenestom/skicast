@@ -13,6 +13,7 @@ import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { AppHeader } from '../components/common/AppHeader';
+import { DebugPanel } from '../components/common/DebugPanel';
 import { VideoReceiver } from '../components/studio/VideoReceiver';
 import { OverlayEditor } from '../components/studio/OverlayEditor';
 import { StartListManager } from '../components/studio/StartListManager';
@@ -304,6 +305,8 @@ export function StudioPage() {
           </button>
         </aside>
       </main>
+      
+      <DebugPanel role="studio" />
     </div>
   );
 }

@@ -61,6 +61,9 @@ export class SignalingService {
   /** True while the initial connect() call is still pending */
   private _initialConnecting = false;
 
+  public _lastReconnectSuccess: number | null = null;
+  public _rejoinSessionCalled = false;
+
   // ── Public API ──────────────────────────────────────────────
 
   get isConnected(): boolean {
@@ -69,6 +72,16 @@ export class SignalingService {
 
   get sessionCode(): string | null {
     return this._sessionCode;
+  }
+
+  getDiagnostics() {
+    return {
+      websocketState: this._connected ? 'connected' : (this._initialConnecting ? 'connecting' : (this._reconnectTimer ? 'reconnecting' : 'disconnected')),
+      reconnectAttempts: this._reconnectAttempts,
+      lastReconnectSuccess: this._lastReconnectSuccess,
+      sessionCode: this._sessionCode,
+      rejoinSessionCalled: this._rejoinSessionCalled
+    };
   }
 
   /** Subscribe to signaling events */
@@ -164,8 +177,9 @@ export class SignalingService {
    * Must call connect() first.
    */
   joinSession(code: string): Promise<void> {
+    this._rejoinSessionCalled = false;
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Join timeout — check the session code')), 10_000);
+      const timeout = setTimeout(() => reject(new Error('Session join timeout')), 10_000);
 
       const unsub = this.on((event) => {
         if (event.type === 'session-joined') {
@@ -254,10 +268,18 @@ export class SignalingService {
         clearTimeout(this._connectTimeoutTimer);
         this._connectTimeoutTimer = null;
       }
+      if (this._reconnectAttempts > 0) {
+        console.log('[SignalingService] Reconnected successfully after', this._reconnectAttempts, 'attempts');
+        this._lastReconnectSuccess = Date.now();
+        this._reconnectAttempts = 0;
+        
+        if (this._sessionCode) {
+          this._rejoinSession();
+        }
+      }
       this._initialConnecting = false;
       console.debug('[SignalingService] Connected to', this._url);
       this._connected = true;
-      this._reconnectAttempts = 0;
       this._startPing();
       this._emit({ type: 'connected' });
       this._connectResolve?.();
@@ -348,6 +370,17 @@ export class SignalingService {
 
   private _emit(event: SignalingEvent): void {
     this._listeners.forEach(l => l(event));
+  }
+
+  private _rejoinSession(): void {
+    if (!this._sessionCode || !this._role) return;
+    this._rejoinSessionCalled = true;
+
+    this._send({
+      type: 'join',
+      code: this._sessionCode,
+      role: this._role
+    });
   }
 
   private _scheduleReconnect(): void {

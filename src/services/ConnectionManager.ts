@@ -67,12 +67,34 @@ export class ConnectionManager {
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private _isReconnecting = false;
 
+  private _log(category: string, message: string) {
+    if (!this._role) return;
+    const prefix = `[${this._role.toUpperCase()} DEBUG]`;
+    const time = new Date().toLocaleTimeString([], { hour12: false });
+    console.log(`${prefix} [${time}] ${category} ${message}`);
+  }
+
   // ── Public getters ──────────────────────────────────────────
 
   get state(): AppState { return this._state; }
   get localStream(): MediaStream | null { return this._localStream; }
   get remoteStream(): MediaStream | null { return this._remoteStream; }
   get sessionCode(): string | null { return this._sessionCode; }
+
+  getDiagnostics() {
+    const signaling = getSignalingService();
+    return {
+      signaling: signaling.getDiagnostics(),
+      webrtc: this._webrtc.getDiagnostics(),
+      media: {
+        localStreamExists: !!this._localStream,
+        localVideoState: this._localStream?.getVideoTracks()[0]?.readyState || 'none',
+        remoteStreamExists: !!this._remoteStream,
+        remoteVideoState: this._remoteStream?.getVideoTracks()[0]?.readyState || 'none',
+      },
+      reconnectAttempts: this._reconnectAttempts
+    };
+  }
 
   // ── Public API ──────────────────────────────────────────────
 
@@ -210,11 +232,16 @@ export class ConnectionManager {
 
     this._unsubSignaling = signaling.on(async (event) => {
       switch (event.type) {
+        case 'connected':
+          this._log('SIGNAL', 'connected');
+          break;
         case 'peer-joined':
+          this._log('SIGNAL', 'peer joined');
           this._emit({ type: 'peerJoined' });
           break;
 
         case 'peer-left':
+          this._log('SIGNAL', 'peer left');
           if (this._state === 'Connected' || this._state === 'Paused') {
             console.log('[ConnectionManager] Peer left — entering Reconnecting');
             this._cleanupWebRTC(); // Force destroy zombie WebRTC connection
@@ -228,13 +255,16 @@ export class ConnectionManager {
           break;
 
         case 'disconnected':
+          this._log('SIGNAL', 'disconnected');
           if (!this._isReconnecting && this._state !== 'Stopped' && this._state !== 'Disconnected') {
+            this._log('SIGNAL', `reconnect attempt ${this._reconnectAttempts + 1}`);
             this._transition('Reconnecting');
             this._scheduleReconnect();
           }
           break;
 
         case 'error':
+          this._log('SIGNAL', `error: ${event.message}`);
           this._emit({ type: 'error', error: event.message ?? 'Signaling error' });
           break;
       }
@@ -300,10 +330,12 @@ export class ConnectionManager {
           break;
 
         case 'iceStateChange':
+          this._log('ICE', `iceConnectionState -> ${event.iceState}`);
           this._handleIceStateChange(event.iceState!);
           break;
 
         case 'connectionChange':
+          this._log('WEBRTC', `connectionState -> ${event.connectionState}`);
           this._handleConnectionStateChange(event.connectionState!);
           break;
 

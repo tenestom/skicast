@@ -55,10 +55,26 @@ export class WebRTCService {
   private _lastStatsTimestamp = 0;
   private _connectionStartTime = 0;
 
+  private _diagnostics = {
+    offerCreated: false,
+    offerSent: false,
+    answerReceived: false,
+    iceSent: 0,
+    iceReceived: 0,
+  };
+
   // ── Public API ──────────────────────────────────────────────
 
   get peerConnection(): RTCPeerConnection | null {
     return this._pc;
+  }
+
+  getDiagnostics() {
+    return {
+      connectionState: this._pc?.connectionState ?? 'new',
+      iceConnectionState: this._pc?.iceConnectionState ?? 'new',
+      ...this._diagnostics
+    };
   }
 
   get remoteStream(): MediaStream | null {
@@ -94,6 +110,7 @@ export class WebRTCService {
     // ICE candidate handler — relay to peer via SignalingService
     pc.onicecandidate = (event) => {
       if (event.candidate) {
+        this._diagnostics.iceSent++;
         this._emit({
           type: 'iceCandidate',
           candidate: event.candidate.toJSON(),
@@ -148,12 +165,16 @@ export class WebRTCService {
   async createOffer(): Promise<RTCSessionDescriptionInit> {
     if (!this._pc) throw new Error('WebRTCService: not initialized');
 
-    const offer = await this._pc.createOffer({
-      offerToReceiveAudio: false,  // Broadcaster sends; studio doesn't send back
-      offerToReceiveVideo: false,
-    });
-    await this._pc.setLocalDescription(offer);
-    return offer;
+    try {
+      const offer = await this._pc.createOffer();
+      await this._pc.setLocalDescription(offer);
+      this._diagnostics.offerCreated = true;
+      this._diagnostics.offerSent = true;
+      return offer;
+    } catch (err) {
+      console.error('[WebRTCService] Error creating offer:', err);
+      throw err;
+    }
   }
 
   /**
@@ -161,9 +182,16 @@ export class WebRTCService {
    */
   async setRemoteAnswer(answer: RTCSessionDescriptionInit): Promise<void> {
     if (!this._pc) throw new Error('WebRTCService: not initialized');
-    await this._pc.setRemoteDescription(new RTCSessionDescription(answer));
-    this._hasRemoteDescription = true;
-    await this._flushPendingCandidates();
+    try {
+      await this._pc.setRemoteDescription(new RTCSessionDescription(answer));
+      this._hasRemoteDescription = true;
+      this._diagnostics.answerReceived = true;
+      
+      await this._flushPendingCandidates();
+    } catch (err) {
+      console.error('[WebRTCService] Error setting remote answer:', err);
+      throw err;
+    }
   }
 
   /**
@@ -186,7 +214,11 @@ export class WebRTCService {
    * Queues candidates if remote description is not yet set.
    */
   async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
-    if (!this._pc) return;
+    this._diagnostics.iceReceived++;
+    if (!this._pc) {
+      console.warn('[WebRTCService] Received candidate but PC is null');
+      return;
+    }
 
     if (!this._hasRemoteDescription) {
       // Queue for later — candidates must arrive after setRemoteDescription
