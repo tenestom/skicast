@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
 import type { Skier } from '../../types/broadcast';
+import { normalizeName, normalizeClub } from '../../utils/normalize';
 import './ImportDialog.css';
 
 // Set up pdf.js worker
@@ -186,11 +187,10 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
       const tempCols: Record<number, string> = {};
       
       row.forEach((h, i) => {
-        if (/name|competitor|skier/.test(h)) { tempCols[i] = 'name'; matches++; }
-        else if (/club|team/.test(h)) { tempCols[i] = 'club'; matches++; }
-        else if (/category|class|division/.test(h)) { tempCols[i] = 'className'; matches++; }
-        else if (/bib|start number|stno/.test(h)) { tempCols[i] = 'bib'; matches++; }
-        else if (/fed|country|nation/.test(h)) { tempCols[i] = 'federation'; matches++; }
+        if (/name|competitor|skier/i.test(h)) { tempCols[i] = 'name'; matches++; }
+        else if (/club|team|federation/i.test(h)) { tempCols[i] = 'club'; matches++; }
+        else if (/category|class|division|categ\.|group/i.test(h)) { tempCols[i] = 'className'; matches++; }
+        else if (/bib|start number|stno/i.test(i.text)) { tempCols[i] = 'bib'; matches++; }
       });
 
       if (matches >= 2) {
@@ -256,15 +256,11 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
     setParsedRows(finalRows);
   };
 
-  const handleImport = () => {
+  const buildDraftSkiers = (): Skier[] => {
     const nameColIdx = Object.keys(columns).find(k => columns[Number(k)] === 'name');
-    if (nameColIdx === undefined) {
-      alert('You must map at least one column to "Name"');
-      return;
-    }
+    if (nameColIdx === undefined) return [];
 
-    const skiers: Skier[] = parsedRows.map((row) => {
-
+    return parsedRows.map((row) => {
       const skier: Skier = {
         id: crypto.randomUUID(),
         name: '',
@@ -281,16 +277,28 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
           (skier as any)[fieldName] = val;
         }
       });
+      
+      // Apply normalization
+      skier.name = normalizeName(skier.name);
+      skier.club = normalizeClub(skier.club);
 
       if (!skier.name) return null;
       return skier;
     }).filter(Boolean) as Skier[];
+  };
 
+  const handleImport = () => {
+    const skiers = buildDraftSkiers();
+    if (skiers.length === 0) {
+      alert('You must map at least one column to "Name"');
+      return;
+    }
     onImport(skiers);
     onClose();
   };
 
-  const availableFields = ['name', 'club', 'className', 'bib', 'federation'];
+  const availableFields = ['name', 'club', 'className', 'bib'];
+  const draftSkiers = buildDraftSkiers();
 
   return (
     <div className="import-modal-overlay">
@@ -325,20 +333,39 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
 
         {parsedRows.length > 0 && (
           <div className="import-modal__preview">
-            <h3>Column Mapping</h3>
-            <p>Assign data fields to the imported columns.</p>
+            <h3>{isConfident ? 'Normalized Preview' : 'Column Mapping'}</h3>
+            <p>{isConfident ? 'Review the final normalized data before importing.' : 'Assign data fields to the imported columns.'}</p>
             
-            <div className="import-modal__table-wrapper">
-              <table className="import-modal__table">
-                <thead>
-                  <tr>
-                    {parsedRows[0].map((_, i) => (
-                      <th key={i}>
-                        {isConfident ? (
-                          <div className="import-modal__confident-header">
-                            {columns[i] || 'Ignored'}
-                          </div>
-                        ) : (
+            {isConfident ? (
+              <div className="import-modal__table-wrapper">
+                <table className="import-modal__table">
+                  <thead>
+                    <tr>
+                      <th>Bib</th>
+                      <th>Name</th>
+                      <th>Club</th>
+                      <th>Category</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {draftSkiers.slice(0, 8).map((skier, i) => (
+                      <tr key={i}>
+                        <td>{skier.bib}</td>
+                        <td>{skier.name}</td>
+                        <td>{skier.club}</td>
+                        <td>{skier.className}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="import-modal__table-wrapper">
+                <table className="import-modal__table">
+                  <thead>
+                    <tr>
+                      {parsedRows[0].map((_, i) => (
+                        <th key={i}>
                           <select 
                             value={columns[i] || ''} 
                             onChange={(e) => setColumns(prev => ({ ...prev, [i]: e.target.value }))}
@@ -348,23 +375,29 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
                               <option key={f} value={f}>{f}</option>
                             ))}
                           </select>
-                        )}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {parsedRows.slice(0, 5).map((row, rowIndex) => (
-                    <tr key={rowIndex}>
-                      {row.map((cell, cellIndex) => (
-                        <td key={cellIndex}>{cell}</td>
+                        </th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="import-modal__note">Showing first 5 rows of {parsedRows.length}</p>
+                  </thead>
+                  <tbody>
+                    {parsedRows.slice(0, 5).map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {row.map((cell, cellIndex) => {
+                          // Show normalized preview inline for mapped columns
+                          const mappedField = columns[cellIndex];
+                          let displayValue = cell;
+                          if (mappedField === 'name') displayValue = normalizeName(cell);
+                          if (mappedField === 'club') displayValue = normalizeClub(cell);
+
+                          return <td key={cellIndex}>{displayValue}</td>;
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="import-modal__note">Showing preview of {draftSkiers.length} valid skiers</p>
           </div>
         )}
 
@@ -372,7 +405,7 @@ export function ImportDialog({ isOpen, onClose, onImport }: ImportDialogProps) {
           <button className="btn btn--ghost" onClick={onClose}>Cancel</button>
           <button 
             className="btn btn--primary" 
-            disabled={parsedRows.length === 0}
+            disabled={draftSkiers.length === 0}
             onClick={handleImport}
           >
             Import
