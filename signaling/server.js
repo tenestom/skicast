@@ -193,6 +193,12 @@ function handleMessage(ws, msg) {
       break;
 
     case 'create-session': {
+      const { role } = msg;
+      if (!role || (role !== 'broadcaster' && role !== 'studio')) {
+        send(ws, { type: 'error', message: 'Missing or invalid role' });
+        return;
+      }
+
       // Enforce session limit
       pruneSessions();
       if (sessions.size >= MAX_SESSIONS) {
@@ -202,22 +208,26 @@ function handleMessage(ws, msg) {
 
       const code = generateCode();
       sessions.set(code, {
-        broadcaster: ws,
-        studio: null,
+        broadcaster: role === 'broadcaster' ? ws : null,
+        studio: role === 'studio' ? ws : null,
         createdAt: Date.now(),
       });
       ws._sessionCode = code;
-      ws._role = 'broadcaster';
+      ws._role = role;
 
-      console.log(`[session] Created ${code} (total: ${sessions.size})`);
+      console.log(`[session] Created ${code} as ${role} (total: ${sessions.size})`);
       send(ws, { type: 'session-created', code });
       break;
     }
 
     case 'join-session': {
-      const { code } = msg;
+      const { code, role } = msg;
       if (!code || typeof code !== 'string') {
         send(ws, { type: 'error', message: 'Missing session code' });
+        return;
+      }
+      if (!role || (role !== 'broadcaster' && role !== 'studio')) {
+        send(ws, { type: 'error', message: 'Missing or invalid role' });
         return;
       }
 
@@ -227,23 +237,24 @@ function handleMessage(ws, msg) {
         return;
       }
 
-      if (session.studio && session.studio.readyState === WebSocket.OPEN) {
-        send(ws, { type: 'error', message: 'Session already has a studio connected.' });
+      if (session[role] && session[role].readyState === WebSocket.OPEN) {
+        send(ws, { type: 'error', message: `Session already has a ${role} connected.` });
         return;
       }
 
-      session.studio = ws;
+      session[role] = ws;
       ws._sessionCode = code.toUpperCase();
-      ws._role = 'studio';
+      ws._role = role;
 
-      console.log(`[session] Studio joined ${code.toUpperCase()}`);
+      console.log(`[session] ${role} joined ${code.toUpperCase()}`);
 
-      // Tell studio it successfully joined
+      // Tell the joiner it successfully joined
       send(ws, { type: 'session-joined', code: code.toUpperCase() });
 
-      // Tell broadcaster that studio is ready
-      if (session.broadcaster && session.broadcaster.readyState === WebSocket.OPEN) {
-        send(session.broadcaster, { type: 'peer-joined', role: 'studio' });
+      // Tell the existing peer (if any) that this peer joined
+      const peerWs = getPeer(session, ws);
+      if (peerWs && peerWs.readyState === WebSocket.OPEN) {
+        send(peerWs, { type: 'peer-joined', role });
       }
       break;
     }

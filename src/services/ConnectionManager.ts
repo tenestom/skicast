@@ -241,16 +241,18 @@ export class ConnectionManager {
         case 'peer-joined':
           this._log('SIGNAL', 'peer joined');
           this._emit({ type: 'peerJoined' });
+          if (this._role === 'broadcaster') {
+            this._cleanupWebRTC();
+            await this._startWebRTCBroadcaster();
+          } else if (this._role === 'studio') {
+            this._cleanupWebRTC();
+          }
           break;
 
         case 'session-rejoined':
           this._log('SIGNAL', 'session rejoined');
-          if (this._role === 'broadcaster') {
-            const pcState = this._webrtc.peerConnection?.connectionState;
-            if (!pcState || pcState === 'failed' || pcState === 'disconnected' || pcState === 'closed') {
-              this._handleIceFailed(); // Trigger WebRTC recovery if signaling comes back but WebRTC is still dead
-            }
-          }
+          // Session rejoining implies signaling is back. WebRTC recovery is handled
+          // either immediately (if we are broadcaster) or via peer-joined.
           break;
 
         case 'peer-left':
@@ -532,6 +534,8 @@ export class ConnectionManager {
 
   private _scheduleReconnect(): void {
     if (this._state === 'Stopped') return;
+    if (this._isReconnecting) return;
+    
     if (this._reconnectAttempts >= RECONNECT_CONFIG.maxAttempts) {
       this._emit({ type: 'error', error: 'Unable to reconnect after multiple attempts. Please restart.' });
       this._transition('Disconnected');
@@ -550,7 +554,10 @@ export class ConnectionManager {
     console.log(`[ConnectionManager] Reconnecting in ${Math.round(delay)}ms (attempt ${this._reconnectAttempts})`);
 
     this._reconnectTimer = setTimeout(async () => {
-      if (this._state === 'Stopped') return;
+      if (this._state === 'Stopped') {
+        this._isReconnecting = false;
+        return;
+      }
 
       try {
         const signaling = getSignalingService();
@@ -568,14 +575,20 @@ export class ConnectionManager {
           await signaling.rejoinSession(code, role);
         }
 
-        // Broadcaster re-initiates WebRTC offer
+        // Recover WebRTC depending on role
         if (role === 'broadcaster') {
+          this._cleanupWebRTC();
           await this._startWebRTCBroadcaster();
+        } else if (role === 'studio') {
+          this._cleanupWebRTC();
         }
-        // Studio waits for new offer from broadcaster
       } catch (err) {
         console.error('[ConnectionManager] Reconnect attempt failed:', err);
-        this._scheduleReconnect();
+      } finally {
+        this._isReconnecting = false;
+        if (!getSignalingService().isConnected && this._state !== 'Stopped' && this._state !== 'Disconnected') {
+          this._scheduleReconnect();
+        }
       }
     }, delay);
   }

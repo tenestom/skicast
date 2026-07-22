@@ -151,7 +151,7 @@ export class SignalingService {
    * Returns the 6-character session code.
    * Must call connect() first.
    */
-  createSession(): Promise<string> {
+  createSession(role: SignalingRole): Promise<string> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Session creation timeout')), 10_000);
 
@@ -160,6 +160,7 @@ export class SignalingService {
           clearTimeout(timeout);
           unsub();
           this._sessionCode = event.code;
+          this._role = role;
           resolve(event.code);
         } else if (event.type === 'error') {
           clearTimeout(timeout);
@@ -168,7 +169,7 @@ export class SignalingService {
         }
       });
 
-      this._send({ type: 'create-session' });
+      this._send({ type: 'create-session', role });
     });
   }
 
@@ -176,7 +177,7 @@ export class SignalingService {
    * Join an existing session as studio.
    * Must call connect() first.
    */
-  joinSession(code: string): Promise<void> {
+  joinSession(code: string, role: SignalingRole): Promise<void> {
     this._rejoinSessionCalled = false;
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Session join timeout')), 10_000);
@@ -186,6 +187,7 @@ export class SignalingService {
           clearTimeout(timeout);
           unsub();
           this._sessionCode = code.toUpperCase();
+          this._role = role;
           resolve();
         } else if (event.type === 'error') {
           clearTimeout(timeout);
@@ -194,7 +196,7 @@ export class SignalingService {
         }
       });
 
-      this._send({ type: 'join-session', code: code.toUpperCase() });
+      this._send({ type: 'join-session', code: code.toUpperCase(), role });
     });
   }
 
@@ -268,15 +270,6 @@ export class SignalingService {
         clearTimeout(this._connectTimeoutTimer);
         this._connectTimeoutTimer = null;
       }
-      if (this._reconnectAttempts > 0) {
-        console.log('[SignalingService] Reconnected successfully after', this._reconnectAttempts, 'attempts');
-        this._lastReconnectSuccess = Date.now();
-        this._reconnectAttempts = 0;
-        
-        if (this._sessionCode) {
-          this._rejoinSession();
-        }
-      }
       this._initialConnecting = false;
       console.debug('[SignalingService] Connected to', this._url);
       this._connected = true;
@@ -304,12 +297,7 @@ export class SignalingService {
       this._clearPing();
       this._emit({ type: 'disconnected' });
 
-      // Only schedule background reconnect for established connections that drop.
-      // Don't loop if the very first connect() attempt failed — the caller already
-      // received a rejected promise and will handle the error in the UI.
-      if (!this._intentionalClose && !wasInitialConnect) {
-        this._scheduleReconnect();
-      }
+      // ConnectionManager handles reconnects now.
     };
 
     ws.onerror = () => {
@@ -370,38 +358,6 @@ export class SignalingService {
 
   private _emit(event: SignalingEvent): void {
     this._listeners.forEach(l => l(event));
-  }
-
-  private _rejoinSession(): void {
-    if (!this._sessionCode || !this._role) return;
-    this._rejoinSessionCalled = true;
-
-    this._send({
-      type: 'rejoin-session',
-      code: this._sessionCode,
-      role: this._role
-    });
-  }
-
-  private _scheduleReconnect(): void {
-    if (this._reconnectAttempts >= RECONNECT_CONFIG.maxAttempts) {
-      console.warn('[SignalingService] Max reconnect attempts reached');
-      this._emit({ type: 'error', message: 'Lost connection to signaling server. Please refresh.' });
-      return;
-    }
-
-    const delay = Math.min(
-      RECONNECT_CONFIG.initialDelayMs * Math.pow(RECONNECT_CONFIG.backoffFactor, this._reconnectAttempts),
-      RECONNECT_CONFIG.maxDelayMs
-    );
-
-    console.debug(`[SignalingService] Reconnecting in ${Math.round(delay)}ms (attempt ${this._reconnectAttempts + 1})`);
-    this._reconnectAttempts++;
-
-    this._reconnectTimer = setTimeout(async () => {
-      this._openSocket();
-      // _openSocket() handles calling _rejoinSession() when it successfully opens
-    }, delay);
   }
 
   private _startPing(): void {
