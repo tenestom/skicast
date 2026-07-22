@@ -283,15 +283,24 @@ export class ConnectionManager {
 
     try {
       if (signal.type === 'offer' && this._role === 'studio') {
-        this._log('WEBRTC', `Offer received. Initializing new RTCPeerConnection.`);
-        // Studio receives broadcaster's offer
-        this._initWebRTC();
+        this._log('WEBRTC', `Offer received.`);
+        console.log('[STUDIO DEBUG] Studio received offer');
+
+        // Always create a fresh RTCPeerConnection if the current one is failed, disconnected, or closed.
+        const currentPcState = this._webrtc.peerConnection?.connectionState;
+        if (!currentPcState || currentPcState === 'failed' || currentPcState === 'disconnected' || currentPcState === 'closed' || currentPcState === 'new') {
+           this._log('WEBRTC', `Studio recreating peer connection (old state: ${currentPcState})`);
+           console.log('[STUDIO DEBUG] Studio recreated peer connection');
+           this._initWebRTC(); // Close and dispose the old connection first, create a new one
+        }
+
         const answer = await this._webrtc.receiveOffer(signal as RTCSessionDescriptionInit);
         this._log('WEBRTC', `Answer created successfully. Sending to peer.`);
+        console.log('[STUDIO DEBUG] Studio sent answer');
         getSignalingService().sendSignal(answer);
 
       } else if (signal.type === 'answer' && this._role === 'broadcaster') {
-        // Broadcaster receives studio's answer
+        console.log('[BROADCASTER DEBUG] Broadcaster received answer');
         await this._webrtc.setRemoteAnswer(signal as RTCSessionDescriptionInit);
 
       } else if (signal.type === 'ice-candidate' && signal.candidate) {
@@ -428,18 +437,34 @@ export class ConnectionManager {
     console.debug('[ConnectionManager] Connection state:', state);
     if (state === 'failed') {
       this._transition('Reconnecting');
-      this._scheduleReconnect();
+      this._handleIceFailed();
+    } else if (state === 'connected') {
+      console.log('[DEBUG] Connection connected');
+      this._isReconnecting = false;
+      this._reconnectAttempts = 0;
+      this._transition('Connected');
     }
   }
 
   private async _handleIceFailed(): Promise<void> {
     if (this._role === 'broadcaster') {
-      // Try ICE restart first (faster than full renegotiation)
-      const restartOffer = await this._webrtc.restartIce();
-      if (restartOffer) {
-        getSignalingService().sendSignal({ ...restartOffer, type: 'ice-restart-offer' });
+      console.log('[BROADCASTER DEBUG] Broadcaster ICE/Connection failed. Creating fresh RTCPeerConnection and sending new offer.');
+      
+      this._initWebRTC(); // Close the old RTCPeerConnection and Create a fresh RTCPeerConnection
+      
+      // Reattach the existing local media tracks
+      if (this._localStream) {
+        this._webrtc.addLocalStream(this._localStream);
+      }
+      
+      // Generate and send a new offer
+      try {
+        const offer = await this._webrtc.createOffer();
+        getSignalingService().sendSignal(offer);
         this._transition('Reconnecting');
         return;
+      } catch (err) {
+        console.error('Failed to create fresh offer for reconnect', err);
       }
     }
     // Fall back to full reconnect
