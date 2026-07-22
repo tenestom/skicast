@@ -120,17 +120,24 @@ export class WebRTCService {
 
     // ICE connection state monitoring
     pc.oniceconnectionstatechange = () => {
+      console.log(`[STUDIO DEBUG] WebRTCService: iceConnectionState -> ${pc.iceConnectionState}`);
       this._emit({ type: 'iceStateChange', iceState: pc.iceConnectionState });
     };
 
     // Overall connection state
     pc.onconnectionstatechange = () => {
+      console.log(`[STUDIO DEBUG] WebRTCService: connectionState -> ${pc.connectionState}, signalingState -> ${pc.signalingState}`);
       this._emit({ type: 'connectionChange', connectionState: pc.connectionState });
       if (pc.connectionState === 'connected') {
         this._startStatsPolling();
       } else {
         this._stopStatsPolling();
       }
+    };
+    
+    // Signaling state
+    pc.onsignalingstatechange = () => {
+      console.log(`[STUDIO DEBUG] WebRTCService: signalingState -> ${pc.signalingState}`);
     };
 
     // Remote track reception (Studio receives broadcaster's camera)
@@ -200,13 +207,30 @@ export class WebRTCService {
    */
   async receiveOffer(offer: RTCSessionDescriptionInit): Promise<RTCSessionDescriptionInit> {
     if (!this._pc) throw new Error('WebRTCService: not initialized');
-    await this._pc.setRemoteDescription(new RTCSessionDescription(offer));
+    
+    console.log('[STUDIO DEBUG] WebRTCService: Calling setRemoteDescription with offer...');
+    try {
+      await this._pc.setRemoteDescription(new RTCSessionDescription(offer));
+      console.log('[STUDIO DEBUG] WebRTCService: setRemoteDescription succeeded.');
+    } catch (err) {
+      console.error('[STUDIO DEBUG] WebRTCService: setRemoteDescription FAILED:', err);
+      throw err;
+    }
+    
     this._hasRemoteDescription = true;
     await this._flushPendingCandidates();
 
-    const answer = await this._pc.createAnswer();
-    await this._pc.setLocalDescription(answer);
-    return answer;
+    console.log('[STUDIO DEBUG] WebRTCService: Calling createAnswer...');
+    try {
+      const answer = await this._pc.createAnswer();
+      console.log('[STUDIO DEBUG] WebRTCService: Answer created.');
+      await this._pc.setLocalDescription(answer);
+      console.log('[STUDIO DEBUG] WebRTCService: setLocalDescription with answer succeeded.');
+      return answer;
+    } catch (err) {
+      console.error('[STUDIO DEBUG] WebRTCService: createAnswer/setLocalDescription FAILED:', err);
+      throw err;
+    }
   }
 
   /**
@@ -222,15 +246,17 @@ export class WebRTCService {
 
     if (!this._hasRemoteDescription) {
       // Queue for later — candidates must arrive after setRemoteDescription
+      console.log('[STUDIO DEBUG] WebRTCService: Queueing ICE candidate because remote description is not set yet');
       this._pendingCandidates.push(candidate);
       return;
     }
 
     try {
       await this._pc.addIceCandidate(new RTCIceCandidate(candidate));
+      console.log('[STUDIO DEBUG] WebRTCService: Successfully added remote ICE candidate');
     } catch (err) {
       // Non-fatal: stale candidates happen during reconnect
-      console.warn('[WebRTCService] addIceCandidate failed (stale?):', err);
+      console.warn('[STUDIO DEBUG] WebRTCService: addIceCandidate failed (stale?):', err);
     }
   }
 

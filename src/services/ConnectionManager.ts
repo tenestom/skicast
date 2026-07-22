@@ -276,12 +276,18 @@ export class ConnectionManager {
     if (!payload || typeof payload !== 'object') return;
 
     const signal = payload as { type: string; sdp?: string; candidate?: RTCIceCandidateInit };
+    
+    if (this._role === 'studio') {
+      this._log('SIGNAL', `Received WebRTC signal of type: ${signal.type}`);
+    }
 
     try {
       if (signal.type === 'offer' && this._role === 'studio') {
+        this._log('WEBRTC', `Offer received. Initializing new RTCPeerConnection.`);
         // Studio receives broadcaster's offer
         this._initWebRTC();
         const answer = await this._webrtc.receiveOffer(signal as RTCSessionDescriptionInit);
+        this._log('WEBRTC', `Answer created successfully. Sending to peer.`);
         getSignalingService().sendSignal(answer);
 
       } else if (signal.type === 'answer' && this._role === 'broadcaster') {
@@ -289,14 +295,18 @@ export class ConnectionManager {
         await this._webrtc.setRemoteAnswer(signal as RTCSessionDescriptionInit);
 
       } else if (signal.type === 'ice-candidate' && signal.candidate) {
+        if (this._role === 'studio') this._log('ICE', `Received remote ICE candidate`);
         await this._webrtc.addIceCandidate(signal.candidate as RTCIceCandidateInit);
 
       } else if (signal.type === 'ice-restart-offer' && this._role === 'studio') {
+        this._log('WEBRTC', `ICE Restart Offer received.`);
         // ICE restart from broadcaster
         const answer = await this._webrtc.receiveOffer(signal as RTCSessionDescriptionInit);
+        this._log('WEBRTC', `ICE Restart Answer created successfully. Sending to peer.`);
         getSignalingService().sendSignal(answer);
       }
     } catch (err) {
+      if (this._role === 'studio') this._log('ERROR', `Signal handling failed: ${err}`);
       console.error('[ConnectionManager] Signal handling error:', err);
       this._emit({ type: 'error', error: `WebRTC error: ${String(err)}` });
     }
