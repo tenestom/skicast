@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { getConnectionManager } from '../../services/ConnectionManager';
 
 export function DebugPanel({ role }: { role: 'broadcaster' | 'studio' }) {
+  const isDebug = new URLSearchParams(window.location.search).get('debug') === 'true';
   const [diag, setDiag] = useState<any>(null);
 
   useEffect(() => {
+    if (!isDebug) return;
+
     const cm = getConnectionManager();
     const interval = setInterval(() => {
       setDiag(cm.getDiagnostics());
@@ -12,9 +15,9 @@ export function DebugPanel({ role }: { role: 'broadcaster' | 'studio' }) {
     // Initial fetch
     setDiag(cm.getDiagnostics());
     return () => clearInterval(interval);
-  }, []);
+  }, [isDebug]);
 
-  if (!diag) return null;
+  if (!isDebug || !diag) return null;
 
   return (
     <div style={{
